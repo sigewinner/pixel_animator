@@ -11,6 +11,7 @@ class CanvasEngine {
     canvas.height = height * pixelSize;
 
     this.pixels = this.createEmpty();
+
     this.tool = 'pencil';
     this.color = '#000000';
     this.isDrawing = false;
@@ -32,13 +33,18 @@ class CanvasEngine {
 
     this.lastDrawX = -1;
     this.lastDrawY = -1;
+
     this.onionFrame = null;
+
+    // ★★★ 绘制完成回调 ★★★
+    this.onDrawEnd = null;
+    // ★★★ 绘制开始回调 ★★★
+    this.onDrawStart = null;
 
     this._bindEvents();
     this._updateCursor();
   }
 
-  // 颜色标准化工具
   normalizeColor(color) {
     if (!color || typeof color !== 'string') return null;
     let hex = color.trim().toLowerCase();
@@ -206,7 +212,9 @@ class CanvasEngine {
     this.render();
   }
 
-  _idx(x, y) { return y * this.width + x; }
+  _idx(x, y) {
+    return y * this.width + x;
+  }
 
   _getPixelCoord(e) {
     const rect = this.canvas.getBoundingClientRect();
@@ -221,6 +229,7 @@ class CanvasEngine {
     const onDown = (e) => {
       e.preventDefault();
       const { x, y } = this._getPixelCoord(e);
+
       if (this.tool === 'crop') {
         this.isDrawing = true;
         this.cropStart = { x, y };
@@ -230,6 +239,7 @@ class CanvasEngine {
         this.render();
         return;
       }
+
       if (this.tool === 'eyedropper') {
         const color = this._getPixelColor(x, y);
         if (color) {
@@ -238,10 +248,17 @@ class CanvasEngine {
         }
         return;
       }
+
       this.isDrawing = true;
       this.pushHistory();
       this.lastDrawX = -1;
       this.lastDrawY = -1;
+
+      // ★★★ 绘制开始回调 ★★★
+      if (this.onDrawStart) {
+        this.onDrawStart();
+      }
+
       if (this.tool === 'line' || this.tool === 'circle') {
         this.previewStart = { x, y };
         this.previewSnapshot = this.pixels.slice();
@@ -255,12 +272,15 @@ class CanvasEngine {
     const onMove = (e) => {
       if (!this.isDrawing) return;
       const { x, y } = this._getPixelCoord(e);
+
       if (this.tool === 'crop') {
         this.cropEnd = { x, y };
         this.render();
         return;
       }
+
       if (this.tool === 'eyedropper') return;
+
       if (this.tool === 'line') {
         this.pixels = this.previewSnapshot.slice();
         this._drawLinePixels(this.previewStart.x, this.previewStart.y, x, y, this.color);
@@ -295,11 +315,26 @@ class CanvasEngine {
         this.render();
         return;
       }
+
+      // 判断是否在绘制中（非预览工具，非裁剪工具）
+      const wasDrawing = this.isDrawing && 
+                          this.tool !== 'line' && 
+                          this.tool !== 'circle' && 
+                          this.tool !== 'crop' &&
+                          this.tool !== 'eyedropper';
+
       this.isDrawing = false;
       this.previewStart = null;
       this.previewSnapshot = null;
       this.lastDrawX = -1;
       this.lastDrawY = -1;
+
+      // ★★★ 绘制完成回调 ★★★
+      if (wasDrawing && this.onDrawEnd) {
+        // 确保 pixels 是最新状态
+        const pixelsCopy = this.pixels.slice();
+        this.onDrawEnd(pixelsCopy);
+      }
     };
 
     this.canvas.addEventListener('mousedown', onDown);
@@ -320,14 +355,10 @@ class CanvasEngine {
   }
 
   _getPixelColor(x, y) {
-  const i = this._idx(x, y);
-  const color = this.pixels[i] || null;
-  if (color) {
-    // 标准化颜色
-    const norm = this.normalizeColor ? this.normalizeColor(color) : color;
-    return norm || color;
-  }
-  return null;
+    const i = this._idx(x, y);
+    const color = this.pixels[i] || null;
+    if (color) return this.normalizeColor(color) || color;
+    return null;
   }
 
   _applyTool(x, y) {

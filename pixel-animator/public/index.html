@@ -273,7 +273,8 @@
       <input type="text" id="workAuthor" placeholder="作者" class="text-input">
     </div>
     <div class="spacer"></div>
-    <button class="action-btn" id="btnPng">导出 PNG</button>
+    <!-- 修改：导出 PNG 按钮加 primary 类使其显眼 -->
+    <button class="action-btn primary" id="btnPng">导出 PNG</button>
     <div class="gif-export-group">
       <select id="gifScale" class="gif-scale-select" title="GIF导出缩放倍数">
         <option value="1">1x 原始</option>
@@ -318,6 +319,23 @@
         <button class="cw-close" id="cwClose">&times;</button>
       </div>
       <div id="colorWheelContainer"></div>
+    </div>
+  </div>
+
+  <!-- 批量导出 PNG 模态框 -->
+  <div class="batch-modal" id="batchModal" style="display:none">
+    <div class="batch-modal-content">
+      <div class="batch-modal-header">
+        <span>选择要导出的帧</span>
+        <button class="batch-modal-close" id="batchModalClose">&times;</button>
+      </div>
+      <div id="batchFrameList" class="batch-frame-list"></div>
+      <div class="batch-modal-footer">
+        <button class="action-btn" id="batchSelectAll">全选</button>
+        <button class="action-btn" id="batchDeselectAll">取消全选</button>
+        <button class="action-btn primary" id="batchExportConfirm">导出选中 (0)</button>
+        <button class="action-btn" id="batchExportCancel">取消</button>
+      </div>
     </div>
   </div>
 
