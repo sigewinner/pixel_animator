@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>在线作品库 · PixelForge</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="gallery-body">
+
+  <header class="gallery-topbar">
+    <div class="brand">
+      <div class="brand-icon" id="brandIcon" style="width:24px;height:24px;"></div>
+      <span>PixelForge</span>
+    </div>
+    <a href="index.html" class="nav-link">← 返回编辑器</a>
+    <div class="spacer" style="flex:1"></div>
+    <div class="user-menu" id="userMenu" style="display:none">
+      <div class="user-avatar" id="userAvatar">?</div>
+      <span class="user-name" id="userName">用户</span>
+    </div>
+  </header>
+
+  <div class="gallery-page">
+    <div class="gallery-header">
+      <div>
+        <h1>在线作品库</h1>
+        <p>探索社区里精彩的像素动画作品</p>
+      </div>
+      <a href="index.html" class="action-btn primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="vertical-align:-2px;margin-right:4px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        去创作
+      </a>
+    </div>
+
+    <!-- 工具栏：标签页 + 搜索 + 排序 -->
+    <div class="gallery-toolbar">
+      <div class="gallery-tabs">
+        <button class="gallery-tab active" data-tab="all">全部作品</button>
+        <button class="gallery-tab" data-tab="mine">我的作品</button>
+      </div>
+      <div class="gallery-search-wrap">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="searchInput" class="gallery-search" placeholder="搜索作品名或作者...">
+      </div>
+      <select id="sortSelect" class="gallery-sort">
+        <option value="newest">最新发布</option>
+        <option value="oldest">最早发布</option>
+        <option value="most-frames">帧数最多</option>
+        <option value="largest">画布最大</option>
+      </select>
+    </div>
+
+    <div id="gallery" class="gallery-grid">
+      <div class="empty-state">加载中...</div>
+    </div>
+  </div>
+
+  <!-- 预览弹窗 -->
+  <div id="previewModal" class="preview-modal" onclick="if(event.target===this)closePreview()">
+    <div class="content">
+      <div class="preview-header">
+        <div>
+          <h3 id="previewTitle">作品预览</h3>
+          <p class="author" id="previewAuthor">作者</p>
+        </div>
+        <div class="preview-actions">
+          <button class="action-btn" id="btnDownloadWork" title="下载为 .pixa 项目文件">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            下载
+          </button>
+          <button class="action-btn danger" id="btnDeleteWork" title="删除此作品" style="display:none">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            删除
+          </button>
+          <button class="action-btn close-btn" id="btnClosePreview">关闭</button>
+        </div>
+      </div>
+      <canvas id="previewCanvas"></canvas>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+  <script src="js/gallery.js"></script>
+  <script>
+    (function() {
+      var user = Auth.getCurrentUser();
+      if (user) {
+        Auth.makePixelLogo(document.getElementById('brandIcon'));
+        var menu = document.getElementById('userMenu');
+        menu.style.display = 'flex';
+        Auth.renderUserMenu(user);
+      }
+    })();
+  </script>
+</body>
+</html>

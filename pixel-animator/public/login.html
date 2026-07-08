@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>像素动画编辑器 · 登录</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="auth-page">
+
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-icon" id="logoIcon"></div>
+      <h1>PixelForge</h1>
+    </div>
+    <p class="auth-subtitle">像素动画创作工坊 · 让创意动起来</p>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">登录</button>
+      <button class="auth-tab" id="tabRegister" onclick="switchTab('register')">注册</button>
+    </div>
+
+    <div class="auth-error" id="authError"></div>
+
+    <form id="authForm" onsubmit="return handleSubmit(event)">
+      <div class="auth-field">
+        <label>用户名</label>
+        <div class="auth-input-group">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <input type="text" id="username" placeholder="输入用户名" autocomplete="username" required minlength="2" maxlength="20">
+        </div>
+      </div>
+
+      <div class="auth-field" id="emailField" style="display:none">
+        <label>邮箱 <span style="color:var(--text-dim);font-weight:400;text-transform:none">（选填）</span></label>
+        <div class="auth-input-group">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          <input type="email" id="email" placeholder="your@email.com" autocomplete="email">
+        </div>
+      </div>
+
+      <div class="auth-field">
+        <label>密码</label>
+        <div class="auth-input-group">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input type="password" id="password" placeholder="输入密码" autocomplete="current-password" required minlength="4">
+        </div>
+      </div>
+
+      <button type="submit" class="auth-btn" id="submitBtn">登录</button>
+    </form>
+
+    <p class="auth-footer">
+      <a href="#" onclick="guestLogin();return false">游客模式体验 →</a>
+    </p>
+  </div>
+
+  <script>
+    // ---- 像素 Logo 生成 ----
+    (function makeLogo() {
+      const colors = [
+        '#8b5cf6','#a78bfa','#38bdf8','#7dd3fc',
+        '#8b5cf6','#e4e4f0','#38bdf8','#7dd3fc',
+        '#a78bfa','#e4e4f0','#e4e4f0','#38bdf8',
+        '#7dd3fc','#38bdf8','#8b5cf6','#a78bfa',
+      ];
+      const logo = document.getElementById('logoIcon');
+      colors.forEach(c => {
+        const px = document.createElement('span');
+        px.style.background = c;
+        logo.appendChild(px);
+      });
+    })();
+
+    let mode = 'login';
+
+    function switchTab(m) {
+      mode = m;
+      document.getElementById('tabLogin').classList.toggle('active', m === 'login');
+      document.getElementById('tabRegister').classList.toggle('active', m === 'register');
+      document.getElementById('emailField').style.display = m === 'register' ? 'block' : 'none';
+      document.getElementById('submitBtn').textContent = m === 'login' ? '登录' : '注册';
+      document.getElementById('authError').classList.remove('show');
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('authError');
+      el.textContent = msg;
+      el.classList.add('show');
+    }
+
+    async function handleSubmit(e) {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = mode === 'login' ? '登录中...' : '注册中...';
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const email = document.getElementById('email').value.trim();
+
+      try {
+        const res = await fetch('/api/auth/' + mode, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, email })
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+          localStorage.setItem('pa_user', JSON.stringify(data.user));
+          window.location.href = 'index.html';
+        } else {
+          showError(data.error || '操作失败');
+          btn.disabled = false;
+          btn.textContent = mode === 'login' ? '登录' : '注册';
+        }
+      } catch (err) {
+        // 后端不可用时，使用本地模式
+        if (mode === 'register') {
+          const users = JSON.parse(localStorage.getItem('pa_users') || '{}');
+          if (users[username]) { showError('用户名已存在'); btn.disabled=false; btn.textContent='注册'; return false; }
+          users[username] = { password, email, createdAt: Date.now() };
+          localStorage.setItem('pa_users', JSON.stringify(users));
+        } else {
+          const users = JSON.parse(localStorage.getItem('pa_users') || '{}');
+          if (!users[username] || users[username].password !== password) {
+            // 如果用户不存在，自动创建（方便快速体验）
+            if (!users[username]) {
+              users[username] = { password, createdAt: Date.now() };
+              localStorage.setItem('pa_users', JSON.stringify(users));
+            } else {
+              showError('用户名或密码错误');
+              btn.disabled = false;
+              btn.textContent = '登录';
+              return false;
+            }
+          }
+        }
+        const user = { username, email: email || '', loginAt: Date.now() };
+        localStorage.setItem('pa_user', JSON.stringify(user));
+        window.location.href = 'index.html';
+      }
+      return false;
+    }
+
+    function guestLogin() {
+      const user = { username: '游客', guest: true, loginAt: Date.now() };
+      localStorage.setItem('pa_user', JSON.stringify(user));
+      window.location.href = 'index.html';
+    }
+  </script>
+</body>
+</html>
