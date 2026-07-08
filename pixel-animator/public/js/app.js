@@ -40,23 +40,23 @@
   let engine, anim;
   let isDeletingColor = false;
 
-  // ---- 颜色标准化 ----
+  // ---- 颜色标准化（不丢失原值） ----
   function normalizeColor(color) {
     if (!color || typeof color !== 'string') return null;
     let hex = color.trim().toLowerCase();
     if (hex.startsWith('#')) hex = hex.slice(1);
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
     if (hex.length === 6) return '#' + hex;
-    return null;
+    return null; // 无法识别则返回 null
   }
 
-  // ---- 强制标准化一帧所有像素 ----
   function normalizeFrame(frame) {
     if (!frame) return;
     for (let i = 0; i < frame.length; i++) {
       if (frame[i] !== null) {
         const norm = normalizeColor(frame[i]);
-        frame[i] = norm; // 可能为 null
+        if (norm !== null) frame[i] = norm;
+        // 如果 norm 为 null，保留原值，不丢弃
       }
     }
   }
@@ -74,8 +74,160 @@
     isDeletingColor = false;
   }
 
+  // ---- 项目草稿保存 ----
+  let saveTimeout = null;
+  let isSaving = false;
+
+  function getCurrentProjectData() {
+    anim.syncCurrentFrame();
+    // 标准化所有帧，但不丢弃非标准颜色
+    for (let i = 0; i < anim.frames.length; i++) {
+      normalizeFrame(anim.frames[i]);
+    }
+    return {
+      title: document.getElementById('workTitle').value.trim() || '未命名作品',
+      author: document.getElementById('workAuthor').value.trim() || '匿名',
+      width: engine.width,
+      height: engine.height,
+      fps: anim.fps,
+      frames: anim.getAllFrames(),
+      currentFrame: anim.current,
+      palette: getActivePalette(),
+      customColors: customColors,
+      thumbnail: anim.getThumbnail(),
+      savedAt: new Date().toISOString(),
+    };
+  }
+
+  // ---- 保存到服务器 ----
+  async function saveProjectToServer(showMessage = false) {
+    if (isSaving) return;
+    isSaving = true;
+
+    const user = Auth.getCurrentUser();
+    if (!user) {
+      // 未登录则保存到本地
+      try {
+        localStorage.setItem('pa_local_project', JSON.stringify(getCurrentProjectData()));
+        if (showMessage) alert('草稿已保存到本地（未登录）');
+      } catch (e) {}
+      isSaving = false;
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/project', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-username': user.username,
+        },
+        body: JSON.stringify({ project: getCurrentProjectData() }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        if (showMessage) alert('项目已保存到云端！');
+        console.log('项目已保存');
+      } else {
+        throw new Error(data.error || '保存失败');
+      }
+    } catch (err) {
+      console.error('保存失败:', err);
+      if (showMessage) alert('保存失败，已保存到本地缓存');
+      try {
+        localStorage.setItem('pa_local_project', JSON.stringify(getCurrentProjectData()));
+      } catch (e) {}
+    }
+    isSaving = false;
+  }
+
+  // ---- 保存草稿到本地（临时保存） ----
+  function saveDraftLocally(showMessage = true) {
+    try {
+      localStorage.setItem('pa_local_project', JSON.stringify(getCurrentProjectData()));
+      if (showMessage) alert('草稿已保存到本地！');
+    } catch (e) {
+      alert('保存草稿失败');
+    }
+  }
+
+  // ---- 自动保存（防抖） ----
+  function autoSave() {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      saveProjectToServer(false);
+      saveTimeout = null;
+    }, 1000);
+  }
+
+  // ---- 加载草稿 ----
+  async function loadProject() {
+    const user = Auth.getCurrentUser();
+    let project = null;
+
+    if (user) {
+      try {
+        const res = await fetch('/api/project', {
+          headers: { 'x-username': user.username },
+        });
+        const data = await res.json();
+        if (data.ok && data.project) {
+          project = data.project;
+          console.log('从云端加载项目');
+        }
+      } catch (e) {
+        console.warn('从云端加载失败', e);
+      }
+    }
+
+    if (!project) {
+      try {
+        const local = localStorage.getItem('pa_local_project');
+        if (local) {
+          project = JSON.parse(local);
+          console.log('从本地缓存加载项目');
+        }
+      } catch (e) {}
+    }
+
+    if (project) {
+      const { width, height, frames, currentFrame, fps } = project;
+      canvasW = width;
+      canvasH = height;
+      const newPixelSize = computePixelSize(width, height);
+      engine.resize(width, height, newPixelSize);
+      anim.resize(width, height);
+      // 加载帧数据，并标准化（保留原值）
+      anim.frames = frames.map(f => {
+        const newFrame = f.slice();
+        normalizeFrame(newFrame);
+        return newFrame;
+      });
+      anim.current = currentFrame || 0;
+      anim.fps = fps || 12;
+      document.getElementById('workTitle').value = project.title || '';
+      document.getElementById('workAuthor').value = project.author || '';
+      document.getElementById('fpsSlider').value = anim.fps;
+      document.getElementById('fpsLabel').textContent = anim.fps + ' FPS';
+      syncSizeSelectors(width, height);
+      engine.loadFrame(anim.frames[anim.current]);
+      anim._renderOnion();
+      if (project.customColors) {
+        customColors = project.customColors;
+        localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+        buildPalette();
+      }
+      renderFrameList();
+      updateSizeDisplay();
+      updateZoomLabel();
+      renderTempPalette();
+      return true;
+    }
+    return false;
+  }
+
   // ---- 初始化 ----
-  function init() {
+  async function init() {
     const res = parseInt(document.getElementById('resolutionSelect').value);
     const ratio = document.getElementById('ratioSelect').value;
     const dims = computeDims(res, ratio);
@@ -89,43 +241,20 @@
 
     // ---- 吸管取色回调 ----
     engine.onColorPick = (color) => {
-      console.log('[吸管] 取到颜色:', color);
-
-      // 标准化颜色
       const targetColor = normalizeColor(color);
-      console.log('[吸管] 标准化后:', targetColor);
-
       if (isDeletingColor) {
         isDeletingColor = false;
         if (!targetColor) {
-          alert('无法识别该颜色，请重新点击色块。');
+          alert('无法识别该颜色');
           switchToPencil();
           return;
         }
-
-        // ★★★ 关键修复：先同步当前帧，确保帧数据与引擎像素一致 ★★★
         anim.syncCurrentFrame();
         const frame = anim.frames[anim.current];
-        console.log('[删除] 同步后当前帧长度:', frame.length);
-
-        // ---- 调试：打印当前帧所有颜色统计 ----
-        const colorStats = {};
-        for (let i = 0; i < frame.length; i++) {
-          const c = frame[i];
-          if (c !== null) {
-            const key = c; // 保留原始值
-            colorStats[key] = (colorStats[key] || 0) + 1;
-          }
-        }
-        console.log('[删除] 当前帧颜色统计 (原始值):', colorStats);
-
-        // 确认删除
-        if (!confirm('确定要删除当前帧中所有「' + targetColor + '」像素吗？（该操作不可撤销）')) {
+        if (!confirm('确定要删除当前帧中所有「' + targetColor + '」像素吗？')) {
           switchToPencil();
           return;
         }
-
-        // 删除：对每个像素标准化后比较
         let count = 0;
         for (let i = 0; i < frame.length; i++) {
           const pixelNorm = normalizeColor(frame[i]);
@@ -134,28 +263,24 @@
             count++;
           }
         }
-
-        console.log('[删除] 共删除 ' + count + ' 个像素，颜色:', targetColor);
-
         if (count > 0) {
           engine.loadFrame(frame);
           engine.render();
           renderFrameList();
-          alert('已删除 ' + count + ' 个「' + targetColor + '」像素。');
+          alert('已删除 ' + count + ' 个像素。');
         } else {
-          alert('当前帧中没有 ' + targetColor + ' 像素。');
+          alert('当前帧中没有该颜色。');
         }
         switchToPencil();
         return;
       }
 
-      // ---- 正常吸管取色 ----
+      // 正常吸管取色
       if (targetColor) {
         addToTempPalette(targetColor);
         document.getElementById('colorPicker').value = targetColor;
         engine.setColor(targetColor);
         document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
-        // 高亮调色板中的颜色
         const swatches = document.querySelectorAll('.swatch');
         for (const sw of swatches) {
           if (sw.style.background === targetColor) {
@@ -194,6 +319,20 @@
     updateSizeDisplay();
     updateZoomLabel();
     renderTempPalette();
+
+    // 加载草稿
+    await loadProject();
+
+    // 绑定“保存草稿”按钮（临时保存到本地）
+    document.getElementById('btnSaveDraft').addEventListener('click', () => {
+      saveDraftLocally(true);
+    });
+
+    // 绑定“保存项目”按钮（保存到云端）
+    document.getElementById('btnSaveProject').addEventListener('click', () => {
+      saveProjectToServer(true);
+    });
+
     engine.render();
   }
 
@@ -253,6 +392,7 @@
       }
     });
     updatePaletteCount();
+    autoSave();
   }
 
   let selectedColor = DEFAULT_PALETTE[0];
@@ -291,6 +431,7 @@
     buildPalette();
     const sws = document.querySelectorAll('.swatch');
     if (sws.length) selectColor(norm, sws[sws.length - 1]);
+    autoSave();
   }
 
   function deleteSelectedColor() {
@@ -305,6 +446,7 @@
     buildPalette();
     const firstSw = document.querySelector('.swatch');
     if (firstSw) selectColor(DEFAULT_PALETTE[0], firstSw);
+    autoSave();
   }
 
   function bindPaletteActions() {
@@ -454,6 +596,7 @@
     document.getElementById('btnRedo').addEventListener('click', () => engine.redo());
     document.getElementById('btnClear').addEventListener('click', () => {
       if (confirm('清空当前帧？')) engine.clear();
+      autoSave();
     });
     document.getElementById('btnGrid').addEventListener('click', (e) => {
       engine.showGrid = !engine.showGrid;
@@ -498,6 +641,7 @@
       emptyMsg.className = 'empty-frames-msg';
       emptyMsg.textContent = '暂无帧，点击 "新帧" 创建';
       list.appendChild(emptyMsg);
+      autoSave();
       return;
     }
     
@@ -581,6 +725,7 @@
       item.addEventListener('click', () => anim.selectFrame(i));
       list.appendChild(item);
     });
+    autoSave();
   }
 
   function updateFrameListSelection(index) {
@@ -726,11 +871,10 @@
         ? quantizeFrame(data.data, w, h, palette, opts.dither)
         : directSample(data.data, w, h);
 
-      // 标准化新生成的像素
       for (let i = 0; i < pixels.length; i++) {
         if (pixels[i] !== null) {
           const norm = normalizeColor(pixels[i]);
-          pixels[i] = norm;
+          if (norm !== null) pixels[i] = norm;
         }
       }
 
@@ -751,6 +895,7 @@
       hint.textContent = msg;
       setTimeout(() => { if (hint) hint.textContent = ''; }, 5000);
     }
+    autoSave();
   }
 
   function drawToCanvas(img, w, h, fitMode) {
@@ -980,6 +1125,7 @@
     updateSizeDisplay();
     updateZoomLabel();
     renderFrameList();
+    autoSave();
   }
 
   function bindZoom() {
@@ -1295,7 +1441,6 @@
         engine.resize(newW, newH, newPixelSize);
         anim.resize(newW, newH);
 
-        // 加载帧并标准化所有像素
         anim.frames = project.frames.map(frame => {
           const newFrame = frame.slice();
           normalizeFrame(newFrame);
@@ -1352,8 +1497,10 @@
 
   // 启动
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', () => {
+      init().catch(e => console.error(e));
+    });
   } else {
-    init();
+    init().catch(e => console.error(e));
   }
 })();

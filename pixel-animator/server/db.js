@@ -49,6 +49,17 @@ db.exec(`
   );
 `);
 
+// 新增：用户项目草稿表
+db.exec(`
+  CREATE TABLE IF NOT EXISTS user_projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE,
+    project_data TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now', 'localtime')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+`);
+
 // 预编译语句
 const stmts = {
   insertWork: db.prepare(`
@@ -60,15 +71,24 @@ const stmts = {
            (SELECT COUNT(*) FROM likes l WHERE l.work_id = works.id) AS like_count
     FROM works ORDER BY created_at DESC
   `),
-  getWorkById: db.prepare(`
-    SELECT * FROM works WHERE id = ?
-  `),
+  getWorkById: db.prepare(`SELECT * FROM works WHERE id = ?`),
   deleteWork: db.prepare(`DELETE FROM works WHERE id = ?`),
   addLike: db.prepare(`INSERT INTO likes (work_id) VALUES (?)`),
+  
   // 用户认证
   findUserByName: db.prepare(`SELECT * FROM users WHERE username = ?`),
   insertUser: db.prepare(`
     INSERT INTO users (username, password, email) VALUES (@username, @password, @email)
+  `),
+
+  // 项目草稿
+  getProject: db.prepare(`SELECT project_data FROM user_projects WHERE user_id = ?`),
+  saveProject: db.prepare(`
+    INSERT INTO user_projects (user_id, project_data, updated_at)
+    VALUES (@user_id, @project_data, datetime('now', 'localtime'))
+    ON CONFLICT(user_id) DO UPDATE SET
+      project_data = excluded.project_data,
+      updated_at = datetime('now', 'localtime')
   `),
 };
 
