@@ -608,13 +608,18 @@
     var ditherRow = document.getElementById('ditherToggleRow');
     var extractToggle = document.getElementById('extractToggle');
     var extractRow = document.getElementById('extractToggleRow');
+    
+    // ★★★ 默认量化是关闭的 ★★★
+    quantToggle.checked = false;
+    ditherRow.style.display = 'none';
+    extractRow.style.display = 'none';
+    
     quantToggle.addEventListener('change', function() {
       ditherRow.style.display = quantToggle.checked ? 'flex' : 'none';
       extractRow.style.display = quantToggle.checked ? 'flex' : 'none';
       if (!quantToggle.checked) extractToggle.checked = false;
     });
-    ditherRow.style.display = quantToggle.checked ? 'flex' : 'none';
-    extractRow.style.display = quantToggle.checked ? 'flex' : 'none';
+    
     extractToggle.addEventListener('change', function() {
       if (extractToggle.checked && !quantToggle.checked) {
         quantToggle.checked = true;
@@ -885,7 +890,7 @@
   function bindExport() {
     document.getElementById('btnGif').addEventListener('click', exportGif);
     document.getElementById('btnSave').addEventListener('click', saveWork);
-    document.getElementById('btnPng').addEventListener('click', showExportPngOptions);
+    document.getElementById('btnPng').addEventListener('click', openBatchModal);
     document.getElementById('btnSaveLocal').addEventListener('click', saveToLocalFile);
     document.getElementById('btnLoadLocal').addEventListener('click', function() {
       document.getElementById('projectFileInput').click();
@@ -904,16 +909,6 @@
     document.getElementById('batchModal').addEventListener('click', function(e) {
       if (e.target === this) closeBatchModal();
     });
-  }
-
-  // ---- 导出 PNG 选项 ----
-  function showExportPngOptions() {
-    var userChoice = confirm('点击"确定"导出当前帧，点击"取消"进入批量导出选择。');
-    if (userChoice) {
-      exportPng();
-    } else {
-      openBatchModal();
-    }
   }
 
   // ---- 批量导出模态框 ----
@@ -1080,7 +1075,7 @@
 
   function processAllImages(images, opts, hint) {
     var w = engine.width, h = engine.height;
-
+  
     var framesData = [];
     for (var imgIdx = 0; imgIdx < images.length; imgIdx++) {
       var img = images[imgIdx];
@@ -1090,15 +1085,20 @@
       framesData.push(data);
     }
     if (framesData.length === 0) { if (hint) hint.textContent = '没有有效图片'; return; }
-
-    var palette = getActivePalette();
+  
+    // ★★★ 保持原色模式：不量化，直接采样 ★★★
+    // 如果用户勾选了"量化到调色板"，则进行量化；否则保持原色
     var extractedCount = 0;
-    if (opts.quantize && opts.extract) {
+    
+    if (opts.quantize) {
+      // 量化模式：提取调色板并量化
+      var palette = getActivePalette();
       var sampled = [];
       for (var dataIdx = 0; dataIdx < framesData.length; dataIdx++) {
-        samplePixels(framesData[dataIdx].data, sampled, 4000);
+        samplePixels(framesData[dataIdx].data, sampled, 8000);
       }
-      var extracted = medianCut(sampled, 64);
+      // 提取更多颜色（最多256色）
+      var extracted = medianCut(sampled, 256);
       extractedCount = extracted.length;
       var existing = new Set(getActivePalette());
       var added = 0;
@@ -1110,30 +1110,45 @@
           added++;
         }
       }
+      // 如果提取的颜色太少，补充一些默认颜色
+      if (extracted.length < 8) {
+        var defaultColors = ['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+        for (var d = 0; d < defaultColors.length; d++) {
+          if (!existing.has(defaultColors[d])) {
+            customColors.push(defaultColors[d]);
+            existing.add(defaultColors[d]);
+            added++;
+          }
+        }
+      }
       localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
       buildPalette();
       palette = getActivePalette();
       if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调，' + added + ' 种已加入调色板...';
     }
-
-    // 导入图片前，先保存当前帧的快照（但我们会先清空帧？还是替换？取决于业务逻辑）
-    // 这里我们直接覆盖当前帧
-    var currentFrameIndex = anim.current;
-    // 处理第一张图片覆盖当前帧，其余新增帧
+  
+    // 处理每一帧
     engine.pushHistory();
     for (var dataIdx2 = 0; dataIdx2 < framesData.length; dataIdx2++) {
       var data = framesData[dataIdx2];
-      var pixels = opts.quantize
-        ? quantizeFrame(data.data, w, h, palette, opts.dither)
-        : directSample(data.data, w, h);
-
+      var pixels;
+      
+      if (opts.quantize) {
+        // 量化模式
+        pixels = quantizeFrame(data.data, w, h, getActivePalette(), opts.dither);
+      } else {
+        // ★★★ 保持原色模式：直接采样，不做量化 ★★★
+        pixels = directSample(data.data, w, h);
+      }
+  
+      // 归一化颜色格式
       for (var p = 0; p < pixels.length; p++) {
         if (pixels[p] !== null) {
           var norm = normalizeColor(pixels[p]);
           if (norm !== null) pixels[p] = norm;
         }
       }
-
+  
       if (dataIdx2 === 0) {
         anim.frames[anim.current] = pixels.slice();
         engine.loadFrame(pixels);
@@ -1144,12 +1159,15 @@
       }
     }
     renderFrameList();
-    // 保存快照
     pushSnapshot();
-
+  
     if (hint) {
       var msg = framesData.length + ' 张图片已转为' + (framesData.length > 1 ? '帧序列' : '像素');
-      if (extractedCount > 0) msg += '（提取 ' + extractedCount + ' 色已加入调色板）';
+      if (opts.quantize && extractedCount > 0) {
+        msg += '（提取 ' + extractedCount + ' 色已加入调色板）';
+      } else if (!opts.quantize) {
+        msg += '（保持原色，未量化）';
+      }
       hint.textContent = msg;
       setTimeout(function() { if (hint) hint.textContent = ''; }, 5000);
     }
@@ -1357,35 +1375,85 @@
     var res = parseInt(document.getElementById('resolutionSelect').value);
     var ratio = document.getElementById('ratioSelect').value;
     var dims = computeDims(res, ratio);
-
-    if (dims.w === canvasW && dims.h === canvasH) return;
-
-    anim.syncCurrentFrame();
-    var hasContent = anim.frames.some(function(f) { return f.some(function(c) { return c !== null; }); });
-    if (hasContent && !confirm('调整画布尺寸将缩放现有内容（最近邻），确认继续？')) return;
-
+  
+    // 获取当前尺寸，用于判断是否真的改变了
+    var currentW = engine.width;
+    var currentH = engine.height;
+    var sizeChanged = (dims.w !== currentW || dims.h !== currentH);
+  
+    // 如果有内容且尺寸变化，给出提示
+    if (sizeChanged) {
+      anim.syncCurrentFrame();
+      var hasContent = anim.frames.some(function(f) {
+        return f.some(function(c) { return c !== null; });
+      });
+      if (hasContent && !confirm('调整画布尺寸将缩放现有内容（最近邻），确认继续？')) {
+        // 用户取消，但卡片仍然关闭
+        closeSettingCardSafely();
+        return;
+      }
+    }
+  
+    // 停止播放
     if (anim.playing) {
       anim.stop();
       document.getElementById('btnPlay').textContent = '播放';
     }
-
-    var newPixelSize = computePixelSize(dims.w, dims.h);
-    basePixelSize = newPixelSize;
-    zoomLevel = 1.0;
-    engine.resize(dims.w, dims.h, newPixelSize);
-    anim.resize(dims.w, dims.h);
-
-    canvasW = dims.w;
-    canvasH = dims.h;
-    engine.loadFrame(anim.frames[anim.current]);
-    anim._renderOnion();
-
-    updateSizeDisplay();
-    updateZoomLabel();
-    renderFrameList();
-    // 调整尺寸后保存快照
-    pushSnapshot();
-    autoSave();
+  
+    // 如果尺寸确实变化了，执行调整
+    if (sizeChanged) {
+      var newPixelSize = computePixelSize(dims.w, dims.h);
+      basePixelSize = newPixelSize;
+      zoomLevel = 1.0;
+      engine.resize(dims.w, dims.h, newPixelSize);
+      anim.resize(dims.w, dims.h);
+  
+      canvasW = dims.w;
+      canvasH = dims.h;
+      engine.loadFrame(anim.frames[anim.current]);
+      anim._renderOnion();
+  
+      updateSizeDisplay();
+      updateZoomLabel();
+      renderFrameList();
+      pushSnapshot();
+      autoSave();
+    }
+  
+    // ★★★ 无论是否修改，都关闭卡片 ★★★
+    closeSettingCardSafely();
+  }
+  
+  // ★★★ 安全关闭设置卡片的辅助函数 ★★★
+  function closeSettingCardSafely() {
+    // 方式1：通过全局函数（如果存在）
+    if (typeof window.closeSettingCard === 'function') {
+      window.closeSettingCard();
+      return;
+    }
+  
+    // 方式2：直接操作 DOM（备用方案）
+    var overlay = document.getElementById('settingCardOverlay');
+    if (overlay) {
+      overlay.classList.remove('open');
+    } else {
+      // 兼容旧版 ID
+      var oldOverlay = document.getElementById('cardOverlay');
+      if (oldOverlay) {
+        oldOverlay.classList.remove('open');
+      }
+    }
+  
+    // 取消背景模糊
+    var mainContent = document.querySelector('.main-content');
+    if (mainContent) {
+      mainContent.classList.remove('blurred');
+    }
+  
+    // 方式3：关闭所有卡片（保险）
+    document.querySelectorAll('.card-overlay').forEach(function(el) {
+      el.classList.remove('open');
+    });
   }
 
   function bindZoom() {
@@ -1480,6 +1548,10 @@
   async function exportGif() {
     var frames = anim.getAllFrames();
     if (frames.length < 1) { alert('没有可导出的帧'); return; }
+
+    // 获取作品名称并清理
+    var title = document.getElementById('workTitle').value.trim() || '未命名作品';
+    var safeTitle = title.replace(/[<>:"/\\|?*]/g, '_');
 
     var w = engine.width, h = engine.height;
     var scale = parseInt(document.getElementById('gifScale').value) || 1;
@@ -1585,7 +1657,9 @@
         if (workerUrl) { URL.revokeObjectURL(workerUrl); workerUrl = null; }
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'pixel-animation.gif';
+        // 使用作品名称作为文件名
+        var fileName = safeTitle + '.gif';
+        a.download = fileName;
         a.click();
         URL.revokeObjectURL(a.href);
         btn.textContent = btnText;
@@ -1605,7 +1679,7 @@
       btn.disabled = false;
       if (progressBar) progressBar.style.display = 'none';
     }
-  }
+}
 
   async function saveWork() {
     var title = document.getElementById('workTitle').value.trim() || '未命名作品';
@@ -1772,3 +1846,44 @@
     init().catch(function(e) { console.error(e); });
   }
 })();
+
+
+
+//add
+
+const overlay = document.getElementById('cardOverlay');
+  const openBtn = document.getElementById('open-settingcard-btn');
+  const closeBtn = document.getElementById('cardClose');
+
+  function openCard() {
+    overlay.classList.add('open');
+    document.querySelector('.main-content')?.classList.add('blurred');
+  }
+
+  function closeCard() {
+    overlay.classList.remove('open');
+    document.querySelector('.main-content')?.classList.remove('blurred');
+  }
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeCard();
+  });
+
+  openBtn.addEventListener('click', openCard);
+  closeBtn.addEventListener('click', closeCard);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeCard();
+  });
+
+  // ★★★ 启动代码 ★★★
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+      init().catch(function(e) { console.error(e); });
+    });
+  } else {
+    init().catch(function(e) { console.error(e); });
+  }
+
+
+
