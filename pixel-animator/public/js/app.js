@@ -1,7 +1,8 @@
 // public/js/app.js - 快照方案，绝对不出错
+// [MODIFIED] 默认分辨率从 32 改为 128
 (function () {
-  var canvasW = 32;
-  var canvasH = 32;
+  var canvasW = 128;
+  var canvasH = 128;
   var zoomLevel = 1.0;
   var basePixelSize = 16;
 
@@ -637,10 +638,10 @@
         document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
         btn.classList.add('active');
         engine.setTool(btn.dataset.tool);
-        
+
         var eraserSizeControl = document.getElementById('eraserSizeControl');
         var penSizeControl = document.getElementById('penSizeControl');
-        
+
         if (eraserSizeControl) {
           eraserSizeControl.style.display = btn.dataset.tool === 'eraser' ? 'flex' : 'none';
         }
@@ -753,7 +754,7 @@
   function renderFrameList() {
     var list = document.getElementById('frameList');
     list.innerHTML = '';
-    
+
     if (anim.frames.length === 0) {
       var emptyMsg = document.createElement('div');
       emptyMsg.className = 'empty-frames-msg';
@@ -762,29 +763,29 @@
       autoSave();
       return;
     }
-    
+
     var w = engine.width, h = engine.height;
     var thumbPs = Math.max(1, Math.ceil(48 / Math.max(w, h)));
-    
+
     anim.frames.forEach(function(frame, i) {
       var item = document.createElement('div');
       item.className = 'frame-item' + (i === anim.current ? ' active' : '');
       item.draggable = true;
       item.dataset.index = i;
-      
+
       item.addEventListener('dragstart', function(e) {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', String(i));
         setTimeout(function() { item.classList.add('dragging'); }, 0);
       });
-      
+
       item.addEventListener('dragend', function() {
         item.classList.remove('dragging');
         document.querySelectorAll('.frame-item.drag-over').forEach(function(el) {
           el.classList.remove('drag-over');
         });
       });
-      
+
       item.addEventListener('dragover', function(e) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
@@ -793,11 +794,11 @@
         });
         item.classList.add('drag-over');
       });
-      
+
       item.addEventListener('dragleave', function() {
         item.classList.remove('drag-over');
       });
-      
+
       item.addEventListener('drop', function(e) {
         e.preventDefault();
         item.classList.remove('drag-over');
@@ -812,7 +813,7 @@
           }
         }
       });
-      
+
       var thumb = document.createElement('canvas');
       thumb.width = w * thumbPs;
       thumb.height = h * thumbPs;
@@ -1742,7 +1743,7 @@
     var ratioSel = document.getElementById('ratioSelect');
     var maxDim = Math.max(w, h);
     var resolutions = [16, 24, 32, 48, 64, 96, 128];
-    var bestRes = 32;
+    var bestRes = 128;
     var bestDiff = Infinity;
     for (var i = 0; i < resolutions.length; i++) {
       var r = resolutions[i];
