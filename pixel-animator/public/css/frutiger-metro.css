@@ -352,7 +352,40 @@ body, html {
               inset 1px 1px 0 var(--fm-bevel-light),
               inset -1px -1px 0 var(--fm-bevel-mid) !important;
   backdrop-filter: blur(10px);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Pixel-style scrollbar for sidebars */
+.sidebar-left::-webkit-scrollbar,
+.sidebar-right::-webkit-scrollbar {
+  width: 10px;
+}
+.sidebar-left::-webkit-scrollbar-track,
+.sidebar-right::-webkit-scrollbar-track {
+  background: linear-gradient(180deg, #e8eef5 0%, #dde4ee 100%);
+  border-left: 1px solid var(--fm-border);
+}
+.sidebar-left::-webkit-scrollbar-thumb,
+.sidebar-right::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #64b5f6 0%, #2196f3 50%, #1976d2 100%);
+  border: 1px solid #1565c0;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+}
+.sidebar-left::-webkit-scrollbar-thumb:hover,
+.sidebar-right::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #42a5f5 0%, #1976d2 50%, #1565c0 100%);
+}
+.sidebar-left::-webkit-scrollbar-corner,
+.sidebar-right::-webkit-scrollbar-corner {
+  background: #e8eef5;
+}
+/* Firefox */
+.sidebar-left, .sidebar-right {
+  scrollbar-width: thin;
+  scrollbar-color: #2196f3 #e8eef5;
 }
 
 /* ---------- Panel sections ---------- */
