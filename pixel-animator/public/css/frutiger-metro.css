@@ -70,11 +70,33 @@
   --fm-gloss: inset 0 1px 0 rgba(255, 255, 255, 0.55);
   --fm-gloss-strong: inset 0 1px 0 rgba(255, 255, 255, 0.75);
 
-  /* override original vars */
-  --border: #b8c4d8;
-  --primary: #2196f3;
-  --text-dim: #5a6a8a;
-  --text-muted: #8090a8;
+  /* Override ALL original dark-theme vars → light-theme values
+     so every element in style.css that uses var(--text), var(--bg-deep),
+     var(--surface) etc. automatically gets correct light-theme colors. */
+  --bg:           #e8f2ff;
+  --bg-deep:      #f0f4fa;
+  --surface:      rgba(255, 255, 255, 0.82);
+  --surface-hi:   rgba(255, 255, 255, 0.92);
+  --surface-hov:  #e3f2fd;
+  --border:       #b8c4d8;
+  --border-hi:    #7a8db0;
+  --text:         #2a3a5a;
+  --text-muted:   #8090a8;
+  --text-dim:     #5a6a8a;
+  --primary:      #2196f3;
+  --primary-hi:   #64b5f6;
+  --primary-dim:  #1976d2;
+  --accent:       #ff9800;
+  --success:      #4caf50;
+  --warning:      #ffd600;
+  --danger:       #f44336;
+  --glow:         0 0 12px rgba(33, 150, 243, 0.25);
+  --radius:       6px;
+  --radius-sm:    4px;
+  --radius-lg:    8px;
+  --shadow:       0 2px 10px rgba(80, 120, 200, 0.15);
+  --shadow-sm:    0 1px 3px rgba(80, 120, 200, 0.12);
+  --transition:   0.15s ease;
 }
 
 /* ---------- Global ---------- */
@@ -1045,6 +1067,67 @@ label {
 .import-hint { font-size: 11px !important; color: var(--fm-text-muted) !important; }
 .palette-count { font-size: 11px !important; color: var(--fm-text-dim) !important; font-weight: 600 !important; }
 .temp-empty { font-size: 12px !important; color: var(--fm-text-muted) !important; }
+
+/* ---------- Fix hardcoded dark backgrounds from style.css ---------- */
+/* Frame thumbnails had hardcoded #1a1a2e dark bg */
+.frame-item img {
+  background: #f0f4fa !important;
+  border: 1px solid var(--fm-border) !important;
+}
+/* Batch frame cards used var(--bg-deep) which was dark — now overridden via :root, but ensure card bg */
+.batch-frame-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f0f4fa 100%) !important;
+  border: 2px solid var(--fm-border) !important;
+}
+.batch-frame-card.selected {
+  border-color: var(--fm-blue) !important;
+  box-shadow: 0 0 12px rgba(33, 150, 243, 0.3) !important;
+}
+/* Color wheel field inputs */
+.cw-field input {
+  background: linear-gradient(180deg, #ffffff 0%, #f5f8fc 100%) !important;
+  color: var(--fm-text) !important;
+  border: 1px solid var(--fm-border-bright) !important;
+}
+.cw-field span {
+  color: var(--fm-text-dim) !important;
+}
+/* Color wheel slider border */
+.cw-slider {
+  border: 1px solid var(--fm-border-bright) !important;
+}
+/* Preview modal canvas bg */
+.preview-modal canvas {
+  background: #f0f4fa !important;
+}
+/* GIF progress container */
+.gif-progress {
+  background: var(--fm-panel-solid) !important;
+  border: 1px solid var(--fm-border-bright) !important;
+  box-shadow: var(--fm-shadow-sm) !important;
+}
+/* Frame item bg (was var(--bg-deep) = dark) */
+.frame-item {
+  background: linear-gradient(180deg, #ffffff 0%, #f0f4fa 100%) !important;
+  border: 2px solid var(--fm-border) !important;
+}
+.frame-item:hover { border-color: var(--fm-blue) !important; }
+.frame-item.active {
+  border-color: var(--fm-blue) !important;
+  box-shadow: 0 0 8px rgba(33, 150, 243, 0.25) !important;
+}
+.frame-item span {
+  color: var(--fm-text) !important;
+}
+/* Drag hint icon */
+.drag-hint { color: var(--fm-text-muted) !important; }
+/* Empty frames message */
+.empty-frames-msg { color: var(--fm-text-muted) !important; }
+/* FPS control */
+.fps-control { color: var(--fm-text-dim) !important; }
+.fps-control label { color: var(--fm-text-dim) !important; }
+/* Zoom control text */
+.zoom-control { color: var(--fm-text-dim) !important; }
 
 /* ---------- Scrollbars — bright colorful ---------- */
 * {
