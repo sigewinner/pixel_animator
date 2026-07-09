@@ -8,6 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
   <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/frutiger-metro.css?v=1">
 </head>
 <body class="editor">
 
@@ -93,11 +94,11 @@
             <select id="resolutionSelect" class="size-select">
               <option value="16">16 px</option>
               <option value="24">24 px</option>
-              <option value="32" selected>32 px</option>
+              <option value="32">32 px</option>
               <option value="48">48 px</option>
               <option value="64">64 px</option>
               <option value="96">96 px</option>
-              <option value="128">128 px</option>
+              <option value="128" selected>128 px</option>
             </select>
           </div>
           <div class="size-row">
@@ -116,7 +117,7 @@
           </div>
           <div class="size-row">
             <button class="action-btn primary" id="btnApplySize">应用</button>
-            <span id="currentSize" class="size-display">32 × 32</span>
+            <span id="currentSize" class="size-display">128 × 128</span>
           </div>
         </div>
       </div>
@@ -210,7 +211,7 @@
     <!-- 画布区 -->
     <section class="canvas-area">
       <div class="canvas-toolbar">
-        <span class="canvas-info" id="canvasInfo">32 × 32 像素</span>
+        <span class="canvas-info" id="canvasInfo">128 × 128 像素</span>
         <div class="zoom-control">
           <button class="zoom-btn" id="btnZoomOut" title="缩小">−</button>
           <span id="zoomLevel">100%</span>
