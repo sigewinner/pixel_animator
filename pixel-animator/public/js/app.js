@@ -55,10 +55,9 @@
   var redoStack = [];
   var MAX_HISTORY = 200;
 
-  // 保存当前所有帧的快照
+  // 保存当前所有帧的快照（深拷贝图层帧）
   function saveSnapshot() {
-    var snapshot = anim.frames.map(function(f) { return f.slice(); });
-    return snapshot;
+    return anim.frames.map(function(f) { return LayerUtils.cloneFrame(f); });
   }
 
   function pushSnapshot() {
@@ -87,8 +86,8 @@
   }
 
   function restoreSnapshot(snap) {
-    // 恢复帧数据
-    anim.frames = snap.map(function(f) { return f.slice(); });
+    // 恢复帧数据（深拷贝图层帧）
+    anim.frames = snap.map(function(f) { return LayerUtils.cloneFrame(f); });
     // 修正当前帧索引
     if (anim.current >= anim.frames.length) {
       anim.current = anim.frames.length - 1;
@@ -98,7 +97,7 @@
     engine.loadFrame(anim.frames[anim.current]);
     anim._renderOnion();
     renderFrameList();
-    // 注意：engine.history 会被清空，但没关系，因为快照已经包含所有帧
+    renderLayerList();
     engine.history = [];
     engine.future = [];
   }
@@ -114,6 +113,17 @@
   }
 
   function normalizeFrame(frame) {
+    if (LayerUtils.isLayerFrame(frame)) {
+      frame.layers.forEach(function(layer) {
+        for (var i = 0; i < layer.pixels.length; i++) {
+          if (layer.pixels[i] !== null) {
+            var norm = normalizeColor(layer.pixels[i]);
+            if (norm !== null) layer.pixels[i] = norm;
+          }
+        }
+      });
+      return;
+    }
     if (!frame) return;
     for (var i = 0; i < frame.length; i++) {
       if (frame[i] !== null) {
@@ -160,6 +170,7 @@
       height: engine.height,
       fps: anim.fps,
       frames: anim.getAllFrames(),
+      layerFrames: anim.getAllLayerFrames(),
       currentFrame: anim.current,
       palette: getActivePalette(),
       customColors: customColors,
@@ -253,7 +264,7 @@
     }
 
     if (project) {
-      var width = project.width, height = project.height, frames = project.frames, currentFrame = project.currentFrame, fps = project.fps;
+      var width = project.width, height = project.height, currentFrame = project.currentFrame, fps = project.fps;
       // ★ 版本不匹配则丢弃旧草稿：让新默认分辨率生效
       var defaultRes = parseInt(document.getElementById('resolutionSelect').value);
       var defaultRatio = document.getElementById('ratioSelect').value;
@@ -268,11 +279,20 @@
       var newPixelSize = computePixelSize(width, height);
       engine.resize(width, height, newPixelSize);
       anim.resize(width, height);
-      anim.frames = frames.map(function(f) {
-        var newFrame = f.slice();
-        normalizeFrame(newFrame);
-        return newFrame;
-      });
+      // 优先使用图层帧数据，回退到旧版扁平数组
+      if (project.layerFrames && project.layerFrames.length > 0) {
+        anim.frames = project.layerFrames.map(function(f) {
+          var frame = LayerUtils.cloneFrame(f);
+          normalizeFrame(frame);
+          return frame;
+        });
+      } else {
+        anim.frames = project.frames.map(function(f) {
+          var frame = LayerUtils.convertLegacyFrame(f, width, height);
+          normalizeFrame(frame);
+          return frame;
+        });
+      }
       anim.current = currentFrame || 0;
       anim.fps = fps || 12;
       document.getElementById('workTitle').value = project.title || '';
@@ -288,6 +308,7 @@
         buildPalette();
       }
       renderFrameList();
+      renderLayerList();
       updateSizeDisplay();
       updateZoomLabel();
       // 清空历史
@@ -311,12 +332,15 @@
     engine = new CanvasEngine(canvas, canvasW, canvasH, basePixelSize);
     anim = new Animation(engine, canvasW, canvasH);
 
-    // ★★★ 绘制完成时保存快照 ★★★
-    engine.onDrawEnd = function(pixelsCopy) {
-      // 将引擎当前帧像素同步到 anim.frames
-      var idx = anim.current;
-      anim.frames[idx] = pixelsCopy.slice();
-      pushSnapshot();  // 保存整个帧列表的快照
+    // ★★★ 绘制完成时同步帧 + 保存快照 ★★★
+    engine.onDrawEnd = function() {
+      pushSnapshot();
+    };
+
+    // 图层变化时刷新图层面板
+    engine.onLayersChange = function() {
+      renderLayerList();
+      autoSave();
     };
 
     engine.onColorPick = function(color) {
@@ -387,6 +411,7 @@
     bindColorWheel();
     bindPaletteActions();
     bindZoom();
+    bindLayers();
 
     var fitModeSelect = document.getElementById('fitMode');
     if (fitModeSelect) fitModeSelect.value = 'contain';
@@ -396,20 +421,21 @@
     }
 
     anim.onFramesChange = renderFrameList;
-    anim.onFrameSelect = function(i) { updateFrameListSelection(i); };
+    anim.onFrameSelect = function(i) { updateFrameListSelection(i); renderLayerList(); };
     renderFrameList();
+    renderLayerList();
     updateSizeDisplay();
     updateZoomLabel();
 
     await loadProject();
 
     if (anim.frames.length === 0) {
-      var empty = new Array(canvasW * canvasH).fill(null);
-      anim.frames = [empty];
+      anim.frames = [LayerUtils.createFrame(canvasW, canvasH, 'Background')];
       anim.current = 0;
-      engine.loadFrame(empty);
+      engine.loadFrame(anim.frames[0]);
       engine.render();
       renderFrameList();
+      renderLayerList();
     }
 
     document.getElementById('btnSaveDraft').addEventListener('click', function() {
@@ -844,19 +870,14 @@
     var ditherRow = document.getElementById('ditherToggleRow');
     var extractToggle = document.getElementById('extractToggle');
     var extractRow = document.getElementById('extractToggleRow');
-    
-    // ★★★ 默认量化是关闭的 ★★★
-    quantToggle.checked = false;
-    ditherRow.style.display = 'none';
-    extractRow.style.display = 'none';
-    
     quantToggle.addEventListener('change', function() {
       ditherRow.style.display = quantToggle.checked ? 'flex' : 'none';
       extractRow.style.display = quantToggle.checked ? 'flex' : 'none';
       if (!quantToggle.checked) extractToggle.checked = false;
       SFX.toggle();
     });
-    
+    ditherRow.style.display = quantToggle.checked ? 'flex' : 'none';
+    extractRow.style.display = quantToggle.checked ? 'flex' : 'none';
     extractToggle.addEventListener('change', function() {
       if (extractToggle.checked && !quantToggle.checked) {
         quantToggle.checked = true;
@@ -966,6 +987,7 @@
       // 保存快照
       pushSnapshot();
       renderFrameList();
+      renderLayerList();
       autoSave();
     };
 
@@ -974,6 +996,7 @@
       SFX.add();
       pushSnapshot();
       renderFrameList();
+      renderLayerList();
       autoSave();
     };
 
@@ -982,6 +1005,7 @@
       SFX.delete();
       pushSnapshot();
       renderFrameList();
+      renderLayerList();
       autoSave();
     };
 
@@ -989,6 +1013,7 @@
       origMove(from, to);
       pushSnapshot();
       renderFrameList();
+      renderLayerList();
       autoSave();
     };
 
@@ -1023,7 +1048,9 @@
     var w = engine.width, h = engine.height;
     var thumbPs = Math.max(1, Math.ceil(48 / Math.max(w, h)));
 
-    anim.frames.forEach(function(frame, i) {
+    anim.frames.forEach(function(frameData, i) {
+      // 使用合成像素渲染缩略图
+      var frame = LayerUtils.getCompositePixels(frameData, w, h);
       var item = document.createElement('div');
       item.className = 'frame-item' + (i === anim.current ? ' active' : '');
       item.draggable = true;
@@ -1144,21 +1171,11 @@
 
   // ---- 导出与保存 ----
   function bindExport() {
-<<<<<<< HEAD
-    document.getElementById('btnGif').addEventListener('click', exportGif);
-    document.getElementById('btnSave').addEventListener('click', saveWork);
-    document.getElementById('btnPng').addEventListener('click', openBatchModal);
-    document.getElementById('btnSaveLocal').addEventListener('click', saveToLocalFile);
-    document.getElementById('btnLoadLocal').addEventListener('click', function() {
-      document.getElementById('projectFileInput').click();
-    });
-=======
     document.getElementById('btnGif').addEventListener('click', function() { SFX.click(); exportGif(); });
     document.getElementById('btnSave').addEventListener('click', function() { SFX.click(); saveWork(); });
     document.getElementById('btnPng').addEventListener('click', function() { SFX.click(); showExportPngOptions(); });
     document.getElementById('btnSaveLocal').addEventListener('click', function() { SFX.click(); saveToLocalFile(); });
     document.getElementById('btnLoadLocal').addEventListener('click', function() { SFX.click(); document.getElementById('projectFileInput').click(); });
->>>>>>> f916b936aee94b214e8b831b181c76aca97ceee2
     document.getElementById('projectFileInput').addEventListener('change', function(e) {
       var file = e.target.files[0];
       if (file) loadFromLocalFile(file);
@@ -1173,6 +1190,16 @@
     document.getElementById('batchModal').addEventListener('click', function(e) {
       if (e.target === this) closeBatchModal();
     });
+  }
+
+  // ---- 导出 PNG 选项 ----
+  function showExportPngOptions() {
+    var userChoice = confirm('点击"确定"导出当前帧，点击"取消"进入批量导出选择。');
+    if (userChoice) {
+      exportPng();
+    } else {
+      openBatchModal();
+    }
   }
 
   // ---- 批量导出模态框 ----
@@ -1341,7 +1368,7 @@
 
   function processAllImages(images, opts, hint) {
     var w = engine.width, h = engine.height;
-  
+
     var framesData = [];
     for (var imgIdx = 0; imgIdx < images.length; imgIdx++) {
       var img = images[imgIdx];
@@ -1351,95 +1378,66 @@
       framesData.push(data);
     }
     if (framesData.length === 0) { if (hint) hint.textContent = '没有有效图片'; return; }
-  
-    // ★★★ 保持原色模式：不量化，直接采样 ★★★
-    // 如果用户勾选了"量化到调色板"，则进行量化；否则保持原色
+
+    var palette = getActivePalette();
     var extractedCount = 0;
-    
-    if (opts.quantize) {
-      // 量化模式：提取调色板并量化
-      var palette = getActivePalette();
+    if (opts.quantize && opts.extract) {
       var sampled = [];
       for (var dataIdx = 0; dataIdx < framesData.length; dataIdx++) {
-        samplePixels(framesData[dataIdx].data, sampled, 8000);
+        samplePixels(framesData[dataIdx].data, sampled, 4000);
       }
-      // 提取更多颜色（最多256色）
-      var extracted = medianCut(sampled, 256);
+      var extracted = medianCut(sampled, 64);
       extractedCount = extracted.length;
-<<<<<<< HEAD
-      var existing = new Set(getActivePalette());
-      var added = 0;
-      for (var hexIdx = 0; hexIdx < extracted.length; hexIdx++) {
-        var hex = extracted[hexIdx];
-        if (!existing.has(hex)) {
-          customColors.push(hex);
-          existing.add(hex);
-          added++;
-        }
-      }
-      // 如果提取的颜色太少，补充一些默认颜色
-      if (extracted.length < 8) {
-        var defaultColors = ['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
-        for (var d = 0; d < defaultColors.length; d++) {
-          if (!existing.has(defaultColors[d])) {
-            customColors.push(defaultColors[d]);
-            existing.add(defaultColors[d]);
-            added++;
-          }
-        }
-      }
-      localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
-      buildPalette();
-      palette = getActivePalette();
-      if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调，' + added + ' 种已加入调色板...';
-=======
       // 提取的颜色仅用于本次量化，不添加到调色板
       palette = getActivePalette().concat(extracted);
       if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调用于量化...';
->>>>>>> f916b936aee94b214e8b831b181c76aca97ceee2
     }
-  
-    // 处理每一帧
+
+    // 导入图片前，先同步当前帧
+    anim.syncCurrentFrame();
+    var currentFrameIndex = anim.current;
+    // 处理第一张图片覆盖当前帧活动图层，其余新增帧
     engine.pushHistory();
     for (var dataIdx2 = 0; dataIdx2 < framesData.length; dataIdx2++) {
       var data = framesData[dataIdx2];
-      var pixels;
-      
-      if (opts.quantize) {
-        // 量化模式
-        pixels = quantizeFrame(data.data, w, h, getActivePalette(), opts.dither);
-      } else {
-        // ★★★ 保持原色模式：直接采样，不做量化 ★★★
-        pixels = directSample(data.data, w, h);
-      }
-  
-      // 归一化颜色格式
+      var pixels = opts.quantize
+        ? quantizeFrame(data.data, w, h, palette, opts.dither)
+        : directSample(data.data, w, h);
+
       for (var p = 0; p < pixels.length; p++) {
         if (pixels[p] !== null) {
           var norm = normalizeColor(pixels[p]);
           if (norm !== null) pixels[p] = norm;
         }
       }
-  
+
       if (dataIdx2 === 0) {
-        anim.frames[anim.current] = pixels.slice();
-        engine.loadFrame(pixels);
+        // 写入当前帧的活动图层
+        var frame0 = anim.frames[anim.current];
+        if (LayerUtils.isLayerFrame(frame0)) {
+          var activeL = LayerUtils.getActiveLayer(frame0);
+          if (activeL) activeL.pixels = pixels.slice();
+        } else {
+          anim.frames[anim.current] = LayerUtils.convertLegacyFrame(pixels, w, h);
+        }
+        engine.loadFrame(anim.frames[anim.current]);
       } else {
-        anim.addFrame();
-        anim.frames[anim.current] = pixels.slice();
-        engine.loadFrame(pixels);
+        // 新增帧，使用导入的像素作为背景图层
+        var newFrame = LayerUtils.createFrame(w, h, 'Background');
+        newFrame.layers[0].pixels = pixels.slice();
+        anim.frames.splice(anim.current + 1, 0, newFrame);
+        anim.current++;
+        engine.loadFrame(newFrame);
       }
     }
     renderFrameList();
+    renderLayerList();
+    // 保存快照
     pushSnapshot();
-  
+
     if (hint) {
       var msg = framesData.length + ' 张图片已转为' + (framesData.length > 1 ? '帧序列' : '像素');
-      if (opts.quantize && extractedCount > 0) {
-        msg += '（提取 ' + extractedCount + ' 色已加入调色板）';
-      } else if (!opts.quantize) {
-        msg += '（保持原色，未量化）';
-      }
+      if (extractedCount > 0) msg += '（提取 ' + extractedCount + ' 色已加入调色板）';
       hint.textContent = msg;
       setTimeout(function() { if (hint) hint.textContent = ''; }, 5000);
     }
@@ -1653,85 +1651,36 @@
     var res = parseInt(document.getElementById('resolutionSelect').value);
     var ratio = document.getElementById('ratioSelect').value;
     var dims = computeDims(res, ratio);
-  
-    // 获取当前尺寸，用于判断是否真的改变了
-    var currentW = engine.width;
-    var currentH = engine.height;
-    var sizeChanged = (dims.w !== currentW || dims.h !== currentH);
-  
-    // 如果有内容且尺寸变化，给出提示
-    if (sizeChanged) {
-      anim.syncCurrentFrame();
-      var hasContent = anim.frames.some(function(f) {
-        return f.some(function(c) { return c !== null; });
-      });
-      if (hasContent && !confirm('调整画布尺寸将缩放现有内容（最近邻），确认继续？')) {
-        // 用户取消，但卡片仍然关闭
-        closeSettingCardSafely();
-        return;
-      }
-    }
-  
-    // 停止播放
+
+    if (dims.w === canvasW && dims.h === canvasH) return;
+
+    anim.syncCurrentFrame();
+    var hasContent = anim.frames.some(function(f) { return f.some(function(c) { return c !== null; }); });
+    if (hasContent && !confirm('调整画布尺寸将缩放现有内容（最近邻），确认继续？')) return;
+
     if (anim.playing) {
       anim.stop();
       document.getElementById('btnPlay').textContent = '播放';
     }
-  
-    // 如果尺寸确实变化了，执行调整
-    if (sizeChanged) {
-      var newPixelSize = computePixelSize(dims.w, dims.h);
-      basePixelSize = newPixelSize;
-      zoomLevel = 1.0;
-      engine.resize(dims.w, dims.h, newPixelSize);
-      anim.resize(dims.w, dims.h);
-  
-      canvasW = dims.w;
-      canvasH = dims.h;
-      engine.loadFrame(anim.frames[anim.current]);
-      anim._renderOnion();
-  
-      updateSizeDisplay();
-      updateZoomLabel();
-      renderFrameList();
-      pushSnapshot();
-      autoSave();
-    }
-  
-    // ★★★ 无论是否修改，都关闭卡片 ★★★
-    closeSettingCardSafely();
-  }
-  
-  // ★★★ 安全关闭设置卡片的辅助函数 ★★★
-  function closeSettingCardSafely() {
-    // 方式1：通过全局函数（如果存在）
-    if (typeof window.closeSettingCard === 'function') {
-      window.closeSettingCard();
-      return;
-    }
-  
-    // 方式2：直接操作 DOM（备用方案）
-    var overlay = document.getElementById('settingCardOverlay');
-    if (overlay) {
-      overlay.classList.remove('open');
-    } else {
-      // 兼容旧版 ID
-      var oldOverlay = document.getElementById('cardOverlay');
-      if (oldOverlay) {
-        oldOverlay.classList.remove('open');
-      }
-    }
-  
-    // 取消背景模糊
-    var mainContent = document.querySelector('.main-content');
-    if (mainContent) {
-      mainContent.classList.remove('blurred');
-    }
-  
-    // 方式3：关闭所有卡片（保险）
-    document.querySelectorAll('.card-overlay').forEach(function(el) {
-      el.classList.remove('open');
-    });
+
+    var newPixelSize = computePixelSize(dims.w, dims.h);
+    basePixelSize = newPixelSize;
+    zoomLevel = 1.0;
+    engine.resize(dims.w, dims.h, newPixelSize);
+    anim.resize(dims.w, dims.h);
+
+    canvasW = dims.w;
+    canvasH = dims.h;
+    engine.loadFrame(anim.frames[anim.current]);
+    anim._renderOnion();
+
+    updateSizeDisplay();
+    updateZoomLabel();
+    renderFrameList();
+    renderLayerList();
+    // 调整尺寸后保存快照
+    pushSnapshot();
+    autoSave();
   }
 
   function bindZoom() {
@@ -1750,6 +1699,205 @@
   function updateZoomLabel() {
     var el = document.getElementById('zoomLevel');
     if (el) el.textContent = Math.round(zoomLevel * 100) + '%';
+  }
+
+  // ---- 图层面板 ----
+  function bindLayers() {
+    var btnAdd = document.getElementById('btnAddLayer');
+    var btnDup = document.getElementById('btnDupLayer');
+    var btnDel = document.getElementById('btnDelLayer');
+    var btnUp = document.getElementById('btnLayerUp');
+    var btnDown = document.getElementById('btnLayerDown');
+    var btnMerge = document.getElementById('btnMergeLayer');
+    var opacitySlider = document.getElementById('layerOpacitySlider');
+    var opacityLabel = document.getElementById('layerOpacityLabel');
+
+    if (btnAdd) btnAdd.addEventListener('click', function() {
+      SFX.add();
+      engine.addLayer();
+      pushSnapshot();
+      autoSave();
+    });
+    if (btnDup) btnDup.addEventListener('click', function() {
+      SFX.add();
+      engine.duplicateLayer();
+      pushSnapshot();
+      autoSave();
+    });
+    if (btnDel) btnDel.addEventListener('click', function() {
+      if (engine.getLayerCount() <= 1) {
+        SFX.error();
+        alert('至少保留一个图层');
+        return;
+      }
+      SFX.delete();
+      engine.deleteLayer();
+      pushSnapshot();
+      autoSave();
+    });
+    if (btnUp) btnUp.addEventListener('click', function() {
+      SFX.click();
+      engine.moveLayerUp();
+      pushSnapshot();
+      autoSave();
+    });
+    if (btnDown) btnDown.addEventListener('click', function() {
+      SFX.click();
+      engine.moveLayerDown();
+      pushSnapshot();
+      autoSave();
+    });
+    if (btnMerge) btnMerge.addEventListener('click', function() {
+      if (engine.getActiveLayerIndex() <= 0) {
+        SFX.error();
+        alert('已是最底层图层，无法向下合并');
+        return;
+      }
+      SFX.confirm();
+      engine.mergeLayerDown();
+      pushSnapshot();
+      autoSave();
+    });
+
+    if (opacitySlider) {
+      opacitySlider.addEventListener('input', function() {
+        var val = parseInt(opacitySlider.value);
+        var idx = engine.getActiveLayerIndex();
+        engine.setLayerOpacity(idx, val / 100);
+        opacityLabel.textContent = val + '%';
+        throttledSfx(function() { SFX.click(); });
+      });
+      opacitySlider.addEventListener('change', function() {
+        autoSave();
+      });
+    }
+  }
+
+  function renderLayerList() {
+    var list = document.getElementById('layerList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    var layers = engine.getLayers();
+    var activeIdx = engine.getActiveLayerIndex();
+    var w = engine.width, h = engine.height;
+    var thumbPs = Math.max(1, Math.ceil(32 / Math.max(w, h)));
+
+    // 从顶到底显示（数组末尾 = 顶层 = 列表顶部）
+    for (var i = layers.length - 1; i >= 0; i--) {
+      (function(layerInfo, idx) {
+        var item = document.createElement('div');
+        item.className = 'layer-item' + (idx === activeIdx ? ' active' : '');
+        item.draggable = true;
+        item.dataset.index = idx;
+
+        // 可见性切换
+        var visBtn = document.createElement('button');
+        visBtn.className = 'layer-vis-btn';
+        visBtn.innerHTML = layerInfo.visible
+          ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'
+          : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+        visBtn.title = layerInfo.visible ? '隐藏' : '显示';
+        visBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          SFX.toggle();
+          engine.setLayerVisible(idx, !layerInfo.visible);
+        });
+        item.appendChild(visBtn);
+
+        // 缩略图
+        var thumb = document.createElement('canvas');
+        thumb.className = 'layer-thumb';
+        thumb.width = w * thumbPs;
+        thumb.height = h * thumbPs;
+        var ctx = thumb.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, thumb.width, thumb.height);
+        ctx.fillStyle = '#e0e0e0';
+        for (var ty = 0; ty < h; ty++) {
+          for (var tx = 0; tx < w; tx++) {
+            if ((tx + ty) % 2 === 0) ctx.fillRect(tx * thumbPs, ty * thumbPs, thumbPs, thumbPs);
+          }
+        }
+        // 获取该图层的像素
+        var frameData = engine.getFrameData();
+        if (frameData && frameData.layers[idx]) {
+          var pix = frameData.layers[idx].pixels;
+          for (var y = 0; y < h; y++) {
+            for (var x = 0; x < w; x++) {
+              var c = pix[y * w + x];
+              if (c) { ctx.fillStyle = c; ctx.fillRect(x * thumbPs, y * thumbPs, thumbPs, thumbPs); }
+            }
+          }
+        }
+        item.appendChild(thumb);
+
+        // 图层名
+        var nameEl = document.createElement('span');
+        nameEl.className = 'layer-name';
+        nameEl.textContent = layerInfo.name;
+        nameEl.title = '双击重命名';
+        nameEl.addEventListener('dblclick', function(e) {
+          e.stopPropagation();
+          var newName = prompt('图层名称:', layerInfo.name);
+          if (newName && newName.trim()) {
+            engine.renameLayer(idx, newName.trim());
+            SFX.click();
+          }
+        });
+        item.appendChild(nameEl);
+
+        // 拖拽排序
+        item.addEventListener('dragstart', function(e) {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(idx));
+          setTimeout(function() { item.classList.add('dragging'); }, 0);
+        });
+        item.addEventListener('dragend', function() {
+          item.classList.remove('dragging');
+          document.querySelectorAll('.layer-item.drag-over').forEach(function(el) {
+            el.classList.remove('drag-over');
+          });
+        });
+        item.addEventListener('dragover', function(e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          document.querySelectorAll('.layer-item.drag-over').forEach(function(el) {
+            if (el !== item) el.classList.remove('drag-over');
+          });
+          item.classList.add('drag-over');
+        });
+        item.addEventListener('drop', function(e) {
+          e.preventDefault();
+          item.classList.remove('drag-over');
+          var fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+          var toIdx = parseInt(item.dataset.index);
+          if (fromIdx !== toIdx && !isNaN(fromIdx) && !isNaN(toIdx)) {
+            engine.moveLayerTo(fromIdx, toIdx);
+            pushSnapshot();
+            autoSave();
+          }
+        });
+
+        // 点击选中
+        item.addEventListener('click', function() {
+          SFX.select();
+          engine.setActiveLayer(idx);
+          renderLayerList();
+        });
+
+        list.appendChild(item);
+      })(layers[i], i);
+    }
+
+    // 更新透明度滑块
+    var opacitySlider = document.getElementById('layerOpacitySlider');
+    var opacityLabel = document.getElementById('layerOpacityLabel');
+    if (opacitySlider && layers[activeIdx]) {
+      var op = Math.round((layers[activeIdx].opacity || 1) * 100);
+      opacitySlider.value = op;
+      if (opacityLabel) opacityLabel.textContent = op + '%';
+    }
   }
 
   function bindCrop() {
@@ -1790,9 +1938,10 @@
 
       updateSizeDisplay();
       updateZoomLabel();
-      renderFrameList();
-      // 裁剪后保存快照
-      pushSnapshot();
+    renderFrameList();
+    renderLayerList();
+    // 裁剪后保存快照
+    pushSnapshot();
       exitCropMode();
     });
 
@@ -1812,7 +1961,7 @@
     tmp.width = w;
     tmp.height = h;
     var ctx = tmp.getContext('2d');
-    var frame = anim.getCurrentFrame();
+    var frame = anim.getCurrentComposite();
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
         var c = frame[y * w + x];
@@ -1829,10 +1978,6 @@
   async function exportGif() {
     var frames = anim.getAllFrames();
     if (frames.length < 1) { alert('没有可导出的帧'); return; }
-
-    // 获取作品名称并清理
-    var title = document.getElementById('workTitle').value.trim() || '未命名作品';
-    var safeTitle = title.replace(/[<>:"/\\|?*]/g, '_');
 
     var w = engine.width, h = engine.height;
     var scale = parseInt(document.getElementById('gifScale').value) || 1;
@@ -1938,9 +2083,7 @@
         if (workerUrl) { URL.revokeObjectURL(workerUrl); workerUrl = null; }
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        // 使用作品名称作为文件名
-        var fileName = safeTitle + '.gif';
-        a.download = fileName;
+        a.download = 'pixel-animation.gif';
         a.click();
         URL.revokeObjectURL(a.href);
         if (window.SFX) SFX.save();
@@ -1961,7 +2104,7 @@
       btn.disabled = false;
       if (progressBar) progressBar.style.display = 'none';
     }
-}
+  }
 
   async function saveWork() {
     var title = document.getElementById('workTitle').value.trim() || '未命名作品';
@@ -2012,13 +2155,14 @@
 
     var project = {
       format: 'pixelforge-project',
-      version: 1,
+      version: 2,
       title: title,
       author: author,
       width: engine.width,
       height: engine.height,
       fps: anim.fps,
       frames: anim.getAllFrames(),
+      layerFrames: anim.getAllLayerFrames(),
       thumbnail: anim.getThumbnail(),
       savedAt: new Date().toISOString(),
     };
@@ -2060,11 +2204,20 @@
         engine.resize(newW, newH, newPixelSize);
         anim.resize(newW, newH);
 
-        anim.frames = project.frames.map(function(frame) {
-          var newFrame = frame.slice();
-          normalizeFrame(newFrame);
-          return newFrame;
-        });
+        // 优先使用图层帧数据，回退到旧版扁平数组
+        if (project.layerFrames && project.layerFrames.length > 0) {
+          anim.frames = project.layerFrames.map(function(f) {
+            var frame = LayerUtils.cloneFrame(f);
+            normalizeFrame(frame);
+            return frame;
+          });
+        } else {
+          anim.frames = project.frames.map(function(f) {
+            var frame = LayerUtils.convertLegacyFrame(f, newW, newH);
+            normalizeFrame(frame);
+            return frame;
+          });
+        }
         anim.current = 0;
         anim.fps = project.fps || 12;
 
@@ -2082,6 +2235,7 @@
 
         updateSizeDisplay();
         renderFrameList();
+        renderLayerList();
         // 加载后清空历史
         undoStack = [];
         redoStack = [];
@@ -2130,47 +2284,3 @@
     init().catch(function(e) { console.error(e); });
   }
 })();
-<<<<<<< HEAD
-
-
-
-//add
-
-const overlay = document.getElementById('cardOverlay');
-  const openBtn = document.getElementById('open-settingcard-btn');
-  const closeBtn = document.getElementById('cardClose');
-
-  function openCard() {
-    overlay.classList.add('open');
-    document.querySelector('.main-content')?.classList.add('blurred');
-  }
-
-  function closeCard() {
-    overlay.classList.remove('open');
-    document.querySelector('.main-content')?.classList.remove('blurred');
-  }
-
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeCard();
-  });
-
-  openBtn.addEventListener('click', openCard);
-  closeBtn.addEventListener('click', closeCard);
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeCard();
-  });
-
-  // ★★★ 启动代码 ★★★
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-      init().catch(function(e) { console.error(e); });
-    });
-  } else {
-    init().catch(function(e) { console.error(e); });
-  }
-
-
-
-=======
->>>>>>> f916b936aee94b214e8b831b181c76aca97ceee2

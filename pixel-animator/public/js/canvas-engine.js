@@ -18,8 +18,13 @@ class CanvasEngine {
     canvas.width = width * pixelSize;
     canvas.height = height * pixelSize;
 
-    // 当前帧的像素数据：一维数组，长度 width*height，值为颜色字符串或 null
+    // 当前帧数据：图层格式 { layers: [...], activeLayer: 0 }
+    // this.pixels 始终指向活动图层的像素数组（供绘制工具直接操作）
+    this.frameData = null;
     this.pixels = this.createEmpty();
+
+    // 图层回调（图层数量/顺序变化时触发）
+    this.onLayersChange = null;
 
     this.tool = 'pencil';
     this.color = '#000000';
@@ -49,17 +54,53 @@ class CanvasEngine {
     return new Array(this.width * this.height).fill(null);
   }
 
-  /** 加载一帧像素数据并渲染 */
-  loadFrame(pixels) {
-    this.pixels = pixels ? pixels.slice() : this.createEmpty();
+  /** 加载一帧数据（支持图层格式或旧版扁平数组） */
+  loadFrame(frameData) {
+    if (LayerUtils.isLayerFrame(frameData)) {
+      // 克隆帧数据，避免与 anim.frames 共享引用
+      this.frameData = LayerUtils.cloneFrame(frameData);
+      var active = LayerUtils.getActiveLayer(this.frameData);
+      this.pixels = active ? active.pixels : this.createEmpty();
+    } else {
+      // 旧版扁平数组 → 包装为单图层
+      this.pixels = frameData ? frameData.slice() : this.createEmpty();
+      this.frameData = {
+        layers: [{
+          id: 1, name: 'Background', visible: true, opacity: 1,
+          pixels: this.pixels
+        }],
+        activeLayer: 0
+      };
+    }
     this.history = [];
     this.future = [];
     this.render();
   }
 
-  /** 获取当前像素数据（用于保存帧） */
+  /** 获取活动图层的像素数据（用于保存/同步） */
   getPixels() {
     return this.pixels.slice();
+  }
+
+  /** 获取合成后的像素（所有可见图层合并，用于导出/缩略图） */
+  getCompositePixels() {
+    if (this.frameData) {
+      return LayerUtils.getCompositePixels(this.frameData, this.width, this.height);
+    }
+    return this.pixels.slice();
+  }
+
+  /** 获取当前帧的完整图层数据 */
+  getFrameData() {
+    return this.frameData;
+  }
+
+  /** 同步活动图层像素到 frameData（在切换帧/保存前调用） */
+  syncToFrameData() {
+    if (this.frameData) {
+      var active = LayerUtils.getActiveLayer(this.frameData);
+      if (active) active.pixels = this.pixels;
+    }
   }
 
   setTool(tool) {
@@ -107,6 +148,15 @@ class CanvasEngine {
     this.canvas.width = newW * newPixelSize;
     this.canvas.height = newH * newPixelSize;
     this.pixels = newPixels;
+
+    // 同步并缩放 frameData 中所有图层
+    if (this.frameData) {
+      this.syncToFrameData();
+      LayerUtils.resizeFrame(this.frameData, oldW, oldH, newW, newH);
+      var active = LayerUtils.getActiveLayer(this.frameData);
+      if (active) this.pixels = active.pixels;
+    }
+
     this.history = [];
     this.future = [];
     this.render();
@@ -147,12 +197,22 @@ class CanvasEngine {
         newPixels[y * newW + x] = this.pixels[(y1 + y) * this.width + (x1 + x)];
       }
     }
+    const oldW = this.width;
     this.width = newW;
     this.height = newH;
     this.pixelSize = newPixelSize || this.pixelSize;
     this.canvas.width = newW * this.pixelSize;
     this.canvas.height = newH * this.pixelSize;
     this.pixels = newPixels;
+
+    // 裁剪 frameData 中所有图层
+    if (this.frameData) {
+      this.syncToFrameData();
+      LayerUtils.cropFrame(this.frameData, x1, y1, x2, y2, oldW);
+      var active = LayerUtils.getActiveLayer(this.frameData);
+      if (active) this.pixels = active.pixels;
+    }
+
     this.history = [];
     this.future = [];
     this.cropStart = null;
@@ -190,11 +250,16 @@ class CanvasEngine {
         return;
       }
 
-      // 吸管工具：取色后立即返回，不修改画布
+      // 吸管工具：从合成画面取色（不限于活动图层）
       if (this.tool === 'eyedropper') {
         const idx = this._idx(x, y);
-        const color = this.pixels[idx];
-        if (this.onColorPick && color) this.onColorPick(color);
+        var pickColor = this.pixels[idx];
+        // 如果活动图层该位置为空，从合成画面取色
+        if (!pickColor && this.frameData) {
+          var comp = this.getCompositePixels();
+          pickColor = comp[idx];
+        }
+        if (this.onColorPick && pickColor) this.onColorPick(pickColor);
         return;
       }
 
@@ -384,10 +449,31 @@ class CanvasEngine {
       ctx.globalAlpha = 1;
     }
 
-    // 当前帧像素
+    // 当前帧像素（合成所有可见图层，活动层使用 this.pixels 实时数据）
+    var composite;
+    if (this.frameData && this.frameData.layers.length > 1) {
+      composite = new Array(this.width * this.height).fill(null);
+      var layers = this.frameData.layers;
+      for (var li = 0; li < layers.length; li++) {
+        var lyr = layers[li];
+        if (!lyr.visible) continue;
+        var lAlpha = lyr.opacity !== undefined ? lyr.opacity : 1;
+        if (lAlpha <= 0) continue;
+        // 活动图层使用 this.pixels（含实时绘制），其他用 layer.pixels
+        var lPix = (li === this.frameData.activeLayer) ? this.pixels : lyr.pixels;
+        for (var lp = 0; lp < composite.length; lp++) {
+          if (lPix[lp] !== null) {
+            composite[lp] = LayerUtils.blendPixel(lPix[lp], composite[lp], lAlpha);
+          }
+        }
+      }
+    } else {
+      composite = this.pixels;
+    }
+
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
-        const c = this.pixels[y * this.width + x];
+        const c = composite[y * this.width + x];
         if (c) {
           ctx.fillStyle = c;
           ctx.fillRect(x * ps, y * ps, ps, ps);
@@ -478,7 +564,153 @@ class CanvasEngine {
   clear() {
     this.pushHistory();
     this.pixels = this.createEmpty();
+    // 同步到 frameData 的活动图层
+    if (this.frameData) {
+      var active = LayerUtils.getActiveLayer(this.frameData);
+      if (active) active.pixels = this.pixels;
+    }
     this.render();
+  }
+
+  // ---- 图层管理 ----
+
+  /** 获取图层数量 */
+  getLayerCount() {
+    return this.frameData ? this.frameData.layers.length : 1;
+  }
+
+  /** 获取活动图层索引 */
+  getActiveLayerIndex() {
+    return this.frameData ? this.frameData.activeLayer : 0;
+  }
+
+  /** 获取所有图层信息（供 UI 渲染） */
+  getLayers() {
+    if (!this.frameData) return [];
+    return this.frameData.layers.map(function (l, i) {
+      return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, index: i };
+    });
+  }
+
+  /** 设置活动图层 */
+  setActiveLayer(index) {
+    if (!this.frameData || index < 0 || index >= this.frameData.layers.length) return;
+    // 先同步当前像素到当前活动图层
+    this.syncToFrameData();
+    this.frameData.activeLayer = index;
+    var active = LayerUtils.getActiveLayer(this.frameData);
+    this.pixels = active ? active.pixels : this.createEmpty();
+    this.history = [];
+    this.future = [];
+    this.render();
+  }
+
+  /** 添加新图层 */
+  addLayer(name) {
+    if (!this.frameData) return;
+    this.syncToFrameData();
+    var layer = LayerUtils.addLayer(this.frameData, this.width, this.height, name);
+    if (layer) {
+      this.pixels = layer.pixels;
+      this.history = [];
+      this.future = [];
+      this.render();
+      if (this.onLayersChange) this.onLayersChange();
+    }
+  }
+
+  /** 删除活动图层 */
+  deleteLayer() {
+    if (!this.frameData) return;
+    this.syncToFrameData();
+    if (LayerUtils.deleteLayer(this.frameData)) {
+      var active = LayerUtils.getActiveLayer(this.frameData);
+      this.pixels = active ? active.pixels : this.createEmpty();
+      this.history = [];
+      this.future = [];
+      this.render();
+      if (this.onLayersChange) this.onLayersChange();
+    }
+  }
+
+  /** 复制活动图层 */
+  duplicateLayer() {
+    if (!this.frameData) return;
+    this.syncToFrameData();
+    var layer = LayerUtils.duplicateLayer(this.frameData);
+    if (layer) {
+      this.pixels = layer.pixels;
+      this.history = [];
+      this.future = [];
+      this.render();
+      if (this.onLayersChange) this.onLayersChange();
+    }
+  }
+
+  /** 上移活动图层 */
+  moveLayerUp() {
+    if (!this.frameData) return;
+    this.syncToFrameData();
+    if (LayerUtils.moveLayerUp(this.frameData)) {
+      this.render();
+      if (this.onLayersChange) this.onLayersChange();
+    }
+  }
+
+  /** 下移活动图层 */
+  moveLayerDown() {
+    if (!this.frameData) return;
+    this.syncToFrameData();
+    if (LayerUtils.moveLayerDown(this.frameData)) {
+      this.render();
+      if (this.onLayersChange) this.onLayersChange();
+    }
+  }
+
+  /** 拖拽排序 */
+  moveLayerTo(fromIdx, toIdx) {
+    if (!this.frameData) return;
+    this.syncToFrameData();
+    if (LayerUtils.moveLayerTo(this.frameData, fromIdx, toIdx)) {
+      this.render();
+      if (this.onLayersChange) this.onLayersChange();
+    }
+  }
+
+  /** 设置图层可见性 */
+  setLayerVisible(index, visible) {
+    if (!this.frameData || index < 0 || index >= this.frameData.layers.length) return;
+    this.frameData.layers[index].visible = visible;
+    this.render();
+    if (this.onLayersChange) this.onLayersChange();
+  }
+
+  /** 设置图层不透明度 */
+  setLayerOpacity(index, opacity) {
+    if (!this.frameData || index < 0 || index >= this.frameData.layers.length) return;
+    this.frameData.layers[index].opacity = Math.max(0, Math.min(1, opacity));
+    this.render();
+  }
+
+  /** 重命名图层 */
+  renameLayer(index, name) {
+    if (!this.frameData || index < 0 || index >= this.frameData.layers.length) return;
+    this.frameData.layers[index].name = name;
+    if (this.onLayersChange) this.onLayersChange();
+  }
+
+  /** 合并活动图层与下方图层 */
+  mergeLayerDown() {
+    if (!this.frameData) return;
+    this.syncToFrameData();
+    if (LayerUtils.mergeLayerDown(this.frameData, this.width, this.height)) {
+      var active = LayerUtils.getActiveLayer(this.frameData);
+      this.pixels = active ? active.pixels : this.createEmpty();
+      this.history = [];
+      this.future = [];
+      this.render();
+      if (this.onLayersChange) this.onLayersChange();
+    }
   }
 }
 

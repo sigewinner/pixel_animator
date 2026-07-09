@@ -256,7 +256,6 @@ img, canvas {
 .auth-footer a:hover { color: var(--accent-hi); text-decoration: underline; }
 
 /* ==================== 编辑器主体 ==================== */
-
 body.editor {
   font-family: var(--font-body);
   background: var(--bg);
@@ -382,12 +381,11 @@ body.editor {
 
 /* 垂直工具栏 */
 .toolbar-vertical {
-  height: 52px;
+  width: 56px;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-right: 3px solid var(--border);
   display: flex;
-  justify-content: center;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
   padding: 8px 0;
   gap: 2px;
@@ -494,66 +492,6 @@ body.editor {
   border-color: var(--primary-dim);
   box-shadow: var(--bevel-in);
 }
-
-
-
-
-/* 遮罩层 - 模糊背景 */
-.card-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-  display: none;                    /* 默认隐藏 */
-  align-items: center;
-  justify-content: center;
-  background: rgba(10, 10, 20, 0.6);
-  backdrop-filter: blur(6px);       /* 模糊画面 */
-  -webkit-backdrop-filter: blur(6px);
-  padding: 20px;
-}
-
-.card-overlay.open {
-  display: flex;                    /* 显示时变为 flex */
-}
-
-/* 卡片主体 - 居中弹出动画 */
-.card-modal {
-  background: #232340;
-  border-radius: 12px;
-  padding: 28px 30px 0px;
-  max-width: 420px;
-  width: 100%;
-  border: 1px solid #4a4a78;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-  animation: cardPop 0.25s ease;
-  position: relative;
-}
-
-@keyframes cardPop {
-  from { opacity: 0; transform: scale(0.92) translateY(12px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-/* 关闭按钮 */
-.card-close {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  background: none;
-  border: none;
-  color: #8a8ab0;
-  font-size: 22px;
-  cursor: pointer;
-  transition: 0.15s;
-}
-.card-close:hover { color: #f87171; }
-
-
-
-
-
-
-
 
 /* 工作区 */
 .workspace {
@@ -1043,7 +981,6 @@ body.editor {
   overflow-y: auto;
   flex-shrink: 0;
   display: flex;
-  margin-left: auto;
   flex-direction: column;
   gap: 16px;
 }
@@ -1179,14 +1116,6 @@ body.editor {
   accent-color: var(--primary);
 }
 .fps-control span { white-space: nowrap; font-variant-numeric: tabular-nums; }
-
-
-
-/* 中间栏 */
-.outer-div {
-  width: 100%;
-  max-width: 12000px; /* 根据需要设置最大宽度 */
-}
 
 /* 底部栏 */
 .bottombar {
