@@ -28,7 +28,8 @@ class CanvasEngine {
 
     this.tool = 'pencil';
     this.color = '#000000';
-    this.brushSize = 1;       // 笔刷大小（铅笔/橡皮共用）
+    this.penSize = 1;        // 钢笔大小
+    this.eraserSize = 3;     // 橡皮擦大小
     this.isDrawing = false;
     this.showGrid = true;
 
@@ -112,7 +113,17 @@ class CanvasEngine {
   }
 
   setBrushSize(size) {
-    this.brushSize = Math.max(1, Math.min(8, size));
+    // 兼容旧调用：同时设置钢笔和橡皮大小
+    this.penSize = Math.max(1, Math.min(10, size));
+    this.eraserSize = Math.max(1, Math.min(20, size));
+  }
+
+  setPenSize(size) {
+    this.penSize = Math.max(1, Math.min(10, size));
+  }
+
+  setEraserSize(size) {
+    this.eraserSize = Math.max(1, Math.min(20, size));
   }
 
   setPixelSize(size) {
@@ -349,9 +360,9 @@ class CanvasEngine {
     this.render();
   }
 
-  /** 笔刷盖章：以 (cx,cy) 为中心画 brushSize×brushSize 方块 */
+  /** 笔刷盖章：以 (cx,cy) 为中心画 size×size 方块 */
   _stampBrush(cx, cy, color) {
-    const bs = this.brushSize;
+    const bs = (this.tool === 'eraser') ? this.eraserSize : this.penSize;
     const half = Math.floor(bs / 2);
     const start = bs % 2 === 0 ? -half + 1 : -half;
     for (let dy = start; dy <= half; dy++) {
