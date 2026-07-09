@@ -101,8 +101,34 @@
 
 /* ---------- Global ---------- */
 * {
-  font-family: "Segoe UI", Frutiger, "Frutiger Next", "Helvetica Neue", Arial, sans-serif !important;
+  font-family: "VT323", "DotGothic16", "Microsoft YaHei", monospace !important;
   box-sizing: border-box;
+  -webkit-font-smoothing: none;
+  text-rendering: optimizeSpeed;
+}
+
+/* Pixel display fonts for headings, brand, and labels (English) */
+.brand-text,
+.panel-section h3,
+.auth-logo h1,
+.gallery-header h1,
+.gallery-topbar .brand,
+.empty-state h3,
+.preview-header h3,
+.cw-modal-header,
+.batch-modal-header,
+.brush-label {
+  font-family: "Press Start 2P", "Silkscreen", "DotGothic16", "Microsoft YaHei", monospace !important;
+}
+
+/* Monospace pixel font for hex/RGB code display */
+.color-panel-hex,
+.color-panel-rgb,
+#fpsLabel,
+#zoomLevel,
+.canvas-info,
+.size-display {
+  font-family: "Silkscreen", "VT323", "DotGothic16", monospace !important;
 }
 
 body, html {
@@ -112,8 +138,8 @@ body, html {
     radial-gradient(ellipse at 50% 50%, rgba(38, 166, 154, 0.06) 0%, transparent 60%),
     linear-gradient(180deg, var(--fm-bg-top) 0%, var(--fm-bg-mid) 50%, var(--fm-bg-bot) 100%) !important;
   color: var(--fm-text) !important;
-  font-size: 13px !important;
-  line-height: 1.4 !important;
+  font-size: 15px !important;
+  line-height: 1.35 !important;
 }
 
 /* ---------- Top bar — glossy bright blue (iOS4 navbar style) ---------- */
@@ -135,10 +161,10 @@ body, html {
 
 .brand-text {
   color: #fff !important;
-  font-weight: 700 !important;
-  font-size: 15px !important;
+  font-weight: 400 !important;
+  font-size: 12px !important;
   text-shadow: 0 1px 2px rgba(0, 60, 130, 0.5) !important;
-  letter-spacing: 0.3px !important;
+  letter-spacing: 0.5px !important;
 }
 
 .brand-icon {
@@ -149,8 +175,8 @@ body, html {
 .nav-link {
   color: #fff !important;
   text-decoration: none !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
   padding: 5px 14px !important;
   border: 1px solid #e65100 !important;
   border-radius: var(--fm-radius-sm) !important;
@@ -182,7 +208,7 @@ body, html {
 .user-menu { color: #fff !important; }
 .user-name, .user-logout {
   color: #fff !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
   text-shadow: 0 1px 2px rgba(0, 60, 130, 0.5) !important;
 }
 
@@ -331,13 +357,13 @@ body, html {
 .panel-section:last-child { border-bottom: none !important; }
 
 .panel-section h3 {
-  font-size: 12px !important;
-  font-weight: 700 !important;
+  font-size: 10px !important;
+  font-weight: 400 !important;
   color: var(--fm-text-heading) !important;
   margin: 0 0 8px 0 !important;
   padding: 0 !important;
   text-transform: none !important;
-  letter-spacing: 0.2px !important;
+  letter-spacing: 0.5px !important;
 }
 
 /* ---------- Form controls — Win98 sunken + bright borders ---------- */
@@ -345,7 +371,7 @@ select, .size-select, .mini-select, .gif-scale-select {
   background: linear-gradient(180deg, #ffffff 0%, #f0f4fa 100%) !important;
   border: 1px solid var(--fm-border-bright) !important;
   border-radius: var(--fm-radius-sm) !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   padding: 4px 8px !important;
   box-shadow:
     inset 1px 1px 2px rgba(100, 130, 180, 0.2),
@@ -368,7 +394,7 @@ input[type="text"], .text-input, textarea {
   border: 1px solid var(--fm-border-bright) !important;
   border-radius: var(--fm-radius-sm) !important;
   padding: 5px 10px !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   box-shadow:
     inset 1px 1px 2px rgba(100, 130, 180, 0.18),
     0 1px 0 rgba(255, 255, 255, 0.8) !important;
@@ -402,7 +428,7 @@ input[type="checkbox"] {
 
 label {
   color: var(--fm-text-dim) !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
 }
 
 /* ---------- Action buttons — colorful glossy beveled ---------- */
@@ -420,7 +446,7 @@ label {
     0 1px 2px rgba(80, 120, 200, 0.12) !important;
   color: var(--fm-text) !important;
   padding: 5px 12px !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   cursor: pointer !important;
   text-decoration: none !important;
   min-height: 26px !important;
@@ -582,7 +608,7 @@ label {
 
 .action-btn.sm {
   padding: 3px 8px !important;
-  font-size: 11px !important;
+  font-size: 13px !important;
   min-height: 22px !important;
 }
 
@@ -605,9 +631,9 @@ label {
 }
 
 .canvas-info {
-  font-size: 12px !important;
+  font-size: 14px !important;
   color: var(--fm-text-heading) !important;
-  font-weight: 600 !important;
+  font-weight: 400 !important;
 }
 
 .zoom-btn {
@@ -625,7 +651,7 @@ label {
   color: var(--fm-text) !important;
   width: 26px !important;
   height: 22px !important;
-  font-size: 13px !important;
+  font-size: 15px !important;
   cursor: pointer !important;
   transition: all 0.12s ease !important;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) !important;
@@ -648,11 +674,11 @@ label {
 }
 
 #zoomLevel {
-  font-size: 12px !important;
+  font-size: 14px !important;
   color: var(--fm-text-dim) !important;
-  min-width: 44px !important;
+  min-width: 48px !important;
   text-align: center !important;
-  font-weight: 600 !important;
+  font-weight: 400 !important;
 }
 
 .canvas-wrap {
@@ -674,7 +700,7 @@ label {
   border-top: 1px solid var(--fm-border-light) !important;
   padding: 6px 12px !important;
 }
-.crop-info { color: var(--fm-text-dim) !important; font-size: 12px !important; }
+.crop-info { color: var(--fm-text-dim) !important; font-size: 14px !important; }
 .crop-info strong { color: var(--fm-text-heading) !important; }
 
 /* ---------- Frame list ---------- */
@@ -766,10 +792,10 @@ label {
   min-width: 0;
 }
 .color-panel-hex {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--fm-text-heading);
-  font-weight: 700;
-  font-family: "Consolas", "Courier New", monospace;
+  font-weight: 400;
+  font-family: "Silkscreen", "VT323", "DotGothic16", monospace;
   cursor: pointer;
   user-select: none;
   transition: color 0.15s ease;
@@ -781,9 +807,9 @@ label {
   color: var(--fm-green-dark) !important;
 }
 .color-panel-rgb {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--fm-text-muted);
-  font-family: "Consolas", "Courier New", monospace;
+  font-family: "Silkscreen", "VT323", "DotGothic16", monospace;
   letter-spacing: 0.3px;
 }
 .color-panel-add {
@@ -885,7 +911,7 @@ label {
   flex-wrap: wrap;
 }
 .batch-delete-info {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--fm-text-dim);
   flex: 1;
   min-width: 60px;
@@ -919,15 +945,15 @@ label {
   align-items: center !important;
   gap: 6px !important;
   padding: 2px 0 !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   color: var(--fm-text-dim) !important;
 }
-.toggle-row span { font-size: 12px !important; color: var(--fm-text-dim) !important; }
+.toggle-row span { font-size: 14px !important; color: var(--fm-text-dim) !important; }
 
 /* ---------- Playback / FPS ---------- */
 .playback { gap: 6px !important; }
-.fps-control label { font-size: 12px !important; color: var(--fm-text-dim) !important; }
-#fpsLabel { font-size: 12px !important; color: var(--fm-text-heading) !important; font-weight: 600 !important; }
+.fps-control label { font-size: 14px !important; color: var(--fm-text-dim) !important; }
+#fpsLabel { font-size: 14px !important; color: var(--fm-text-heading) !important; font-weight: 400 !important; }
 
 /* ---------- Bottom bar — light glass footer ---------- */
 .bottombar {
@@ -971,8 +997,8 @@ label {
     #1976d2 55%,
     #1565c0 100%) !important;
   color: #fff !important;
-  font-weight: 700 !important;
-  font-size: 13px !important;
+  font-weight: 400 !important;
+  font-size: 11px !important;
   padding: 8px 14px !important;
   text-shadow: 0 1px 2px rgba(0, 50, 120, 0.4) !important;
   border-bottom: 1px solid #0d47a1 !important;
@@ -1044,7 +1070,7 @@ label {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
   transition: width 0.3s ease !important;
 }
-.gif-progress-text { font-size: 11px !important; color: var(--fm-text-heading) !important; font-weight: 600 !important; }
+.gif-progress-text { font-size: 13px !important; color: var(--fm-text-heading) !important; font-weight: 400 !important; }
 
 /* ---------- Tooltips — Win98 classic but brighter ---------- */
 .tooltip {
@@ -1052,7 +1078,7 @@ label {
   background: linear-gradient(180deg, #ffffe0 0%, #fffacd 100%) !important;
   border: 1px solid #d4a020 !important;
   border-radius: 3px !important;
-  font-size: 11px !important;
+  font-size: 13px !important;
   padding: 3px 8px !important;
   box-shadow: 0 2px 6px rgba(80, 120, 200, 0.2) !important;
   color: #4a3500 !important;
@@ -1060,12 +1086,12 @@ label {
 
 /* ---------- Misc text ---------- */
 .size-display {
-  font-size: 12px !important;
+  font-size: 14px !important;
   color: var(--fm-text-heading) !important;
-  font-weight: 600 !important;
+  font-weight: 400 !important;
 }
-.import-hint { font-size: 11px !important; color: var(--fm-text-muted) !important; }
-.palette-count { font-size: 11px !important; color: var(--fm-text-dim) !important; font-weight: 600 !important; }
+.import-hint { font-size: 13px !important; color: var(--fm-text-muted) !important; }
+.palette-count { font-size: 13px !important; color: var(--fm-text-dim) !important; font-weight: 400 !important; }
 
 /* ---------- Fix hardcoded dark backgrounds from style.css ---------- */
 /* Frame thumbnails had hardcoded #1a1a2e dark bg */

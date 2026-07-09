@@ -4,7 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>像素动画编辑器 · 登录</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body class="auth-page">
 
@@ -59,10 +61,10 @@
     // ---- 像素 Logo 生成 ----
     (function makeLogo() {
       const colors = [
-        '#8b5cf6','#a78bfa','#38bdf8','#7dd3fc',
-        '#8b5cf6','#e4e4f0','#38bdf8','#7dd3fc',
-        '#a78bfa','#e4e4f0','#e4e4f0','#38bdf8',
-        '#7dd3fc','#38bdf8','#8b5cf6','#a78bfa',
+        '#ffcd75','#ffe3a3','#41a6f6','#73eff7',
+        '#ffcd75','#f4f4f4','#41a6f6','#73eff7',
+        '#ffe3a3','#f4f4f4','#f4f4f4','#41a6f6',
+        '#73eff7','#41a6f6','#ffcd75','#ffe3a3',
       ];
       const logo = document.getElementById('logoIcon');
       colors.forEach(c => {
