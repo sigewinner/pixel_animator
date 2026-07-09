@@ -236,6 +236,15 @@
 
     if (project) {
       var width = project.width, height = project.height, frames = project.frames, currentFrame = project.currentFrame, fps = project.fps;
+      // ★ 版本不匹配则丢弃旧草稿：让新默认分辨率生效
+      var defaultRes = parseInt(document.getElementById('resolutionSelect').value);
+      var defaultRatio = document.getElementById('ratioSelect').value;
+      var defaultDims = computeDims(defaultRes, defaultRatio);
+      if (width !== defaultDims.w || height !== defaultDims.h) {
+        console.log('[loadProject] 旧草稿尺寸 ' + width + 'x' + height + ' 与默认 ' + defaultDims.w + 'x' + defaultDims.h + ' 不一致，丢弃旧草稿');
+        try { localStorage.removeItem('pa_local_project'); } catch (e) {}
+        return false;
+      }
       canvasW = width;
       canvasH = height;
       var newPixelSize = computePixelSize(width, height);
