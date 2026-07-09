@@ -161,10 +161,17 @@ body, html {
 
 .brand-text {
   color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
   font-weight: 400 !important;
-  font-size: 12px !important;
-  text-shadow: 0 1px 2px rgba(0, 60, 130, 0.5) !important;
+  font-size: 14px !important;
+  text-shadow:
+    1px 1px 0 #0d47a1,
+    -1px -1px 0 #0d47a1,
+    1px -1px 0 #0d47a1,
+    -1px 1px 0 #0d47a1,
+    0 2px 4px rgba(0, 30, 80, 0.6) !important;
   letter-spacing: 0.5px !important;
+  -webkit-text-stroke: 0 !important;
 }
 
 .brand-icon {
