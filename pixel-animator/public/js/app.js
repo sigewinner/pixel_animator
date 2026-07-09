@@ -343,6 +343,7 @@
         selectedColor = targetColor;
         document.getElementById('colorPicker').value = targetColor;
         engine.setColor(targetColor);
+        showPickedColor(targetColor);
         document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
         var swatches = document.querySelectorAll('.swatch');
         for (var i = 0; i < swatches.length; i++) {
@@ -512,6 +513,20 @@
     }
     engine.setColor(norm);
     document.getElementById('colorPicker').value = norm;
+  }
+
+  function showPickedColor(color) {
+    var display = document.getElementById('pickedColorDisplay');
+    var swatch = document.getElementById('pickedColorSwatch');
+    var hexLabel = document.getElementById('pickedColorHex');
+    if (!display || !swatch || !hexLabel) return;
+    display.style.display = 'flex';
+    swatch.style.background = color;
+    hexLabel.textContent = color.toUpperCase();
+    // 重新触发淡入动画
+    display.style.animation = 'none';
+    void display.offsetWidth;
+    display.style.animation = '';
   }
 
   function updatePaletteCount() {

@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
   <link rel="stylesheet" href="css/style.css?v=7">
-  <link rel="stylesheet" href="css/frutiger-metro.css?v=1">
+  <link rel="stylesheet" href="css/frutiger-metro.css?v=2">
 </head>
 <body class="editor">
 
@@ -128,6 +128,13 @@
           <svg class="toggle-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </h3>
         <div class="collapsible-content" id="paletteContent">
+        <div class="picked-color-display" id="pickedColorDisplay" style="display:none;">
+          <div class="picked-color-swatch" id="pickedColorSwatch"></div>
+          <div class="picked-color-info">
+            <span class="picked-color-label">已取色</span>
+            <span class="picked-color-hex" id="pickedColorHex">-</span>
+          </div>
+        </div>
         <div id="palette" class="palette"></div>
         <div class="color-picker-wrap">
           <button class="action-btn primary cw-open-btn" id="btnColorWheel">
@@ -350,7 +357,7 @@
   <script src="js/canvas-engine.js?v=8"></script>
   <script src="js/animation.js?v=7"></script>
   <script src="js/color-wheel.js?v=7"></script>
-  <script src="js/app.js?v=10"></script>
+  <script src="js/app.js?v=11"></script>
   <script>
     (function() {
       var user = Auth.requireAuth();
