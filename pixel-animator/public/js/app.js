@@ -472,6 +472,31 @@
     });
     updatePaletteCount();
     autoSave();
+
+    // 调色盘键盘导航
+    wrap.setAttribute('tabindex', '0');
+    wrap.onkeydown = function(e) {
+      var key = e.key;
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(key) === -1) return;
+      e.preventDefault();
+      var swatches = wrap.querySelectorAll('.swatch');
+      if (!swatches.length) return;
+      var cols = 5;
+      var curIdx = 0;
+      for (var j = 0; j < swatches.length; j++) {
+        if (swatches[j].classList.contains('active')) { curIdx = j; break; }
+      }
+      var newIdx = curIdx;
+      if (key === 'ArrowRight') newIdx = Math.min(curIdx + 1, swatches.length - 1);
+      else if (key === 'ArrowLeft') newIdx = Math.max(curIdx - 1, 0);
+      else if (key === 'ArrowDown') newIdx = Math.min(curIdx + cols, swatches.length - 1);
+      else if (key === 'ArrowUp') newIdx = Math.max(curIdx - cols, 0);
+      if (newIdx !== curIdx) {
+        var palette = getActivePalette();
+        selectColor(palette[newIdx], swatches[newIdx]);
+        switchToPencil();
+      }
+    };
   }
 
   var selectedColor = DEFAULT_PALETTE[0];
@@ -481,7 +506,10 @@
     if (!norm) return;
     selectedColor = norm;
     document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
-    if (swEl) swEl.classList.add('active');
+    if (swEl) {
+      swEl.classList.add('active');
+      swEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
     engine.setColor(norm);
     document.getElementById('colorPicker').value = norm;
   }
