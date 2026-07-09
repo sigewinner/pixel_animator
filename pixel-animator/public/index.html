@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
   <link rel="stylesheet" href="css/style.css?v=7">
-  <link rel="stylesheet" href="css/frutiger-metro.css?v=2">
+  <link rel="stylesheet" href="css/frutiger-metro.css?v=3">
 </head>
 <body class="editor">
 
@@ -128,12 +128,15 @@
           <svg class="toggle-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </h3>
         <div class="collapsible-content" id="paletteContent">
-        <div class="picked-color-display" id="pickedColorDisplay" style="display:none;">
-          <div class="picked-color-swatch" id="pickedColorSwatch"></div>
-          <div class="picked-color-info">
-            <span class="picked-color-label">已取色</span>
-            <span class="picked-color-hex" id="pickedColorHex">-</span>
+        <div class="color-panel" id="colorPanel">
+          <div class="color-panel-swatch" id="colorPanelSwatch"></div>
+          <div class="color-panel-info">
+            <span class="color-panel-hex" id="colorPanelHex" title="点击复制色值">#000000</span>
+            <span class="color-panel-rgb" id="colorPanelRgb">RGB 0, 0, 0</span>
           </div>
+          <button class="color-panel-add" id="colorPanelAdd" title="添加到调色板">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
         </div>
         <div id="palette" class="palette"></div>
         <div class="color-picker-wrap">
@@ -357,7 +360,7 @@
   <script src="js/canvas-engine.js?v=8"></script>
   <script src="js/animation.js?v=7"></script>
   <script src="js/color-wheel.js?v=7"></script>
-  <script src="js/app.js?v=11"></script>
+  <script src="js/app.js?v=12"></script>
   <script>
     (function() {
       var user = Auth.requireAuth();

@@ -343,7 +343,7 @@
         selectedColor = targetColor;
         document.getElementById('colorPicker').value = targetColor;
         engine.setColor(targetColor);
-        showPickedColor(targetColor);
+        updateColorPanel(targetColor, true);
         document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
         var swatches = document.querySelectorAll('.swatch');
         for (var i = 0; i < swatches.length; i++) {
@@ -357,6 +357,8 @@
     };
 
     buildPalette();
+    updateColorPanel(selectedColor, false);
+    bindColorPanel();
     bindToolbar();
     bindFrames();
     bindPlayback();
@@ -467,6 +469,8 @@
       var norm = normalizeColor(picker.value);
       if (norm) {
         engine.setColor(norm);
+        selectedColor = norm;
+        updateColorPanel(norm, false);
         document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
         switchToPencil();
       }
@@ -513,20 +517,35 @@
     }
     engine.setColor(norm);
     document.getElementById('colorPicker').value = norm;
+    updateColorPanel(norm, false);
   }
 
-  function showPickedColor(color) {
-    var display = document.getElementById('pickedColorDisplay');
-    var swatch = document.getElementById('pickedColorSwatch');
-    var hexLabel = document.getElementById('pickedColorHex');
-    if (!display || !swatch || !hexLabel) return;
-    display.style.display = 'flex';
-    swatch.style.background = color;
-    hexLabel.textContent = color.toUpperCase();
-    // 重新触发淡入动画
-    display.style.animation = 'none';
-    void display.offsetWidth;
-    display.style.animation = '';
+  function hexToRgb(hex) {
+    var h = hex.replace('#', '');
+    if (h.length === 3) h = h.split('').map(function(c) { return c + c; }).join('');
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+    };
+  }
+
+  function updateColorPanel(color, isPicked) {
+    var norm = normalizeColor(color);
+    if (!norm) return;
+    var swatch = document.getElementById('colorPanelSwatch');
+    var hexEl = document.getElementById('colorPanelHex');
+    var rgbEl = document.getElementById('colorPanelRgb');
+    if (!swatch || !hexEl || !rgbEl) return;
+    swatch.style.background = norm;
+    hexEl.textContent = norm.toUpperCase();
+    var rgb = hexToRgb(norm);
+    rgbEl.textContent = 'RGB ' + rgb.r + ', ' + rgb.g + ', ' + rgb.b;
+    if (isPicked) {
+      swatch.classList.remove('picked');
+      void swatch.offsetWidth;
+      swatch.classList.add('picked');
+    }
   }
 
   function updatePaletteCount() {
@@ -576,6 +595,52 @@
     document.getElementById('btnResetPalette').addEventListener('click', resetPalette);
   }
 
+  // ---- Canva/剪映风格颜色面板交互 ----
+  function bindColorPanel() {
+    var hexEl = document.getElementById('colorPanelHex');
+    var addBtn = document.getElementById('colorPanelAdd');
+
+    // 点击 hex 复制色值
+    if (hexEl) {
+      hexEl.addEventListener('click', function() {
+        var text = hexEl.textContent;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(function() {
+            hexEl.classList.add('copied');
+            hexEl.textContent = '已复制!';
+            setTimeout(function() {
+              hexEl.classList.remove('copied');
+              hexEl.textContent = text;
+            }, 800);
+          });
+        } else {
+          // fallback
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); } catch (e) {}
+          document.body.removeChild(ta);
+          hexEl.classList.add('copied');
+          hexEl.textContent = '已复制!';
+          setTimeout(function() {
+            hexEl.classList.remove('copied');
+            hexEl.textContent = text;
+          }, 800);
+        }
+      });
+    }
+
+    // + 按钮添加当前颜色到调色板
+    if (addBtn) {
+      addBtn.addEventListener('click', function() {
+        if (selectedColor) {
+          addCustomColor(selectedColor);
+        }
+      });
+    }
+  }
+
   // ---- 临时调色板 ----
   var MAX_TEMP_COLORS = 10;
   var tempPalette = [];
@@ -611,7 +676,9 @@
         var norm = normalizeColor(color);
         if (norm) {
           engine.setColor(norm);
+          selectedColor = norm;
           document.getElementById('colorPicker').value = norm;
+          updateColorPanel(norm, false);
           document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
           document.querySelectorAll('.temp-swatch').forEach(function(s) { s.classList.remove('active'); });
           sw.classList.add('active');
@@ -649,7 +716,9 @@
             var norm = normalizeColor(hex);
             if (norm) {
               engine.setColor(norm);
+              selectedColor = norm;
               document.getElementById('colorPicker').value = norm;
+              updateColorPanel(norm, false);
               document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
               switchToPencil();
             }
