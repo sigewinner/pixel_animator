@@ -149,6 +149,8 @@ body, html {
 
 /* ---------- Vertical toolbar ---------- */
 .toolbar-vertical {
+  position: relative !important;
+  z-index: 500 !important;
   background: var(--da-panel) !important;
   border: 1px solid var(--da-border) !important;
   border-radius: var(--da-radius-lg) !important;
@@ -605,6 +607,7 @@ label {
 
 /* ---------- Tooltips ---------- */
 .tooltip {
+  z-index: 10000 !important;
   background: linear-gradient(180deg, #fffef0 0%, #fff5c0 100%) !important;
   border: 1px solid #d0a020 !important;
   border-radius: 4px !important;
