@@ -399,6 +399,17 @@
       saveProjectToServer(true);
     });
 
+    // ---- 面板折叠/展开 ----
+    document.querySelectorAll('.section-toggle').forEach(function(header) {
+      header.addEventListener('click', function() {
+        var targetId = this.getAttribute('data-target');
+        var content = document.getElementById(targetId);
+        if (!content) return;
+        var isCollapsed = this.classList.toggle('collapsed');
+        content.classList.toggle('collapsed', isCollapsed);
+      });
+    });
+
     engine.render();
     // 初始保存快照
     pushSnapshot();

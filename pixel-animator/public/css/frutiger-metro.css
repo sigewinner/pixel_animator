@@ -643,3 +643,46 @@ label {
 *::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #6a88b0 0%, #4a6890 40%, #3a5680 60%, #2a4068 100%);
 }
+
+/* ================================================================
+   Panel Section Collapse / Expand
+   ================================================================ */
+.section-toggle {
+  cursor: pointer;
+  user-select: none;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  transition: color 0.2s ease;
+}
+.section-toggle:hover {
+  color: var(--da-text-heading, #6cb0e8);
+}
+.section-toggle .toggle-arrow {
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.7;
+}
+.section-toggle:hover .toggle-arrow {
+  opacity: 1;
+}
+.section-toggle.collapsed .toggle-arrow {
+  transform: rotate(-90deg);
+}
+.collapsible-content {
+  overflow: hidden;
+  max-height: 800px;
+  opacity: 1;
+  transition: max-height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.2s ease,
+              padding 0.3s ease;
+}
+.collapsible-content.collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
