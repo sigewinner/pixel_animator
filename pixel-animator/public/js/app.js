@@ -36,10 +36,19 @@
 
   var customColors = [];
   try { customColors = JSON.parse(localStorage.getItem('pa_custom_colors') || '[]'); } catch (e) { customColors = []; }
-  function getActivePalette() { return DEFAULT_PALETTE.concat(customColors); }
+  var hiddenDefaults = new Set();
+  try {
+    var savedHidden = JSON.parse(localStorage.getItem('pa_hidden_defaults') || '[]');
+    hiddenDefaults = new Set(savedHidden);
+  } catch (e) { hiddenDefaults = new Set(); }
+  function getActivePalette() {
+    return DEFAULT_PALETTE.filter(function(c) { return !hiddenDefaults.has(c); }).concat(customColors);
+  }
 
   var engine, anim;
   var isDeletingColor = false;
+  var batchDeleteMode = false;
+  var batchSelectedColors = new Set();
 
   // ---- 快照历史 ----
   var undoStack = [];
@@ -442,25 +451,57 @@
     var palette = getActivePalette();
     palette.forEach(function(color, i) {
       var sw = document.createElement('button');
-      sw.className = 'swatch' + (i < DEFAULT_PALETTE.length ? '' : ' custom');
+      var isDefault = DEFAULT_PALETTE.indexOf(color) !== -1;
+      sw.className = 'swatch' + (isDefault ? '' : ' custom');
       sw.style.background = color;
       sw.title = color;
       if (i === 0) sw.classList.add('active');
+      if (batchDeleteMode) {
+        wrap.classList.add('batch-mode');
+        if (batchSelectedColors.has(color)) sw.classList.add('batch-selected');
+      }
       sw.addEventListener('click', function() {
+        if (batchDeleteMode) {
+          var norm = normalizeColor(color);
+          if (batchSelectedColors.has(norm)) {
+            batchSelectedColors.delete(norm);
+            sw.classList.remove('batch-selected');
+          } else {
+            batchSelectedColors.add(norm);
+            sw.classList.add('batch-selected');
+          }
+          updateBatchDeleteInfo();
+          return;
+        }
         selectColor(color, sw);
         switchToPencil();
       });
-      if (i >= DEFAULT_PALETTE.length) {
-        sw.addEventListener('contextmenu', function(e) {
-          e.preventDefault();
-          if (confirm('从调色板移除颜色 ' + color + ' ?')) {
-            customColors.splice(i - DEFAULT_PALETTE.length, 1);
-            localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+      // Right-click: delete single color (both default and custom)
+      sw.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        if (batchDeleteMode) return;
+        var norm = normalizeColor(color);
+        if (isDefault) {
+          if (confirm('隐藏默认颜色 ' + norm + ' ？\n可点击"恢复默认"恢复所有颜色。')) {
+            hiddenDefaults.add(norm);
+            localStorage.setItem('pa_hidden_defaults', JSON.stringify(Array.from(hiddenDefaults)));
             buildPalette();
             updatePaletteCount();
+            autoSave();
           }
-        });
-      }
+        } else {
+          if (confirm('从调色板移除颜色 ' + norm + ' ?')) {
+            var custIdx = customColors.indexOf(norm);
+            if (custIdx !== -1) {
+              customColors.splice(custIdx, 1);
+              localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+              buildPalette();
+              updatePaletteCount();
+              autoSave();
+            }
+          }
+        }
+      });
       wrap.appendChild(sw);
     });
     var picker = document.getElementById('colorPicker');
@@ -580,10 +621,13 @@
   }
 
   function resetPalette() {
-    if (customColors.length === 0) return;
-    if (!confirm('确定恢复默认调色板？自定义颜色将被清空。')) return;
+    if (customColors.length === 0 && hiddenDefaults.size === 0) return;
+    if (!confirm('确定恢复默认调色板？自定义颜色将被清空，隐藏的默认颜色将恢复。')) return;
     customColors = [];
+    hiddenDefaults.clear();
     localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+    localStorage.setItem('pa_hidden_defaults', JSON.stringify([]));
+    if (batchDeleteMode) toggleBatchDeleteMode();
     buildPalette();
     var firstSw = document.querySelector('.swatch');
     if (firstSw) selectColor(DEFAULT_PALETTE[0], firstSw);
@@ -593,6 +637,90 @@
   function bindPaletteActions() {
     document.getElementById('btnDeleteColor').addEventListener('click', deleteSelectedColor);
     document.getElementById('btnResetPalette').addEventListener('click', resetPalette);
+    document.getElementById('btnBatchDelete').addEventListener('click', toggleBatchDeleteMode);
+    document.getElementById('btnBatchDeleteConfirm').addEventListener('click', confirmBatchDelete);
+    document.getElementById('btnBatchDeleteCancel').addEventListener('click', toggleBatchDeleteMode);
+    document.getElementById('btnBatchSelectAll').addEventListener('click', batchSelectAllColors);
+  }
+
+  // ---- 批量删除 ----
+  function toggleBatchDeleteMode() {
+    batchDeleteMode = !batchDeleteMode;
+    batchSelectedColors.clear();
+    var paletteEl = document.getElementById('palette');
+    var bar = document.getElementById('batchDeleteBar');
+    if (batchDeleteMode) {
+      paletteEl.classList.add('batch-mode');
+      bar.style.display = 'flex';
+      document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
+    } else {
+      paletteEl.classList.remove('batch-mode');
+      bar.style.display = 'none';
+      document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('batch-selected'); });
+    }
+    updateBatchDeleteInfo();
+  }
+
+  function updateBatchDeleteInfo() {
+    var info = document.getElementById('batchDeleteInfo');
+    var confirmBtn = document.getElementById('btnBatchDeleteConfirm');
+    if (info) info.textContent = '已选 ' + batchSelectedColors.size + ' 色';
+    if (confirmBtn) {
+      confirmBtn.textContent = '删除 (' + batchSelectedColors.size + ')';
+      confirmBtn.disabled = batchSelectedColors.size === 0;
+    }
+  }
+
+  function batchSelectAllColors() {
+    var pal = getActivePalette();
+    var allSelected = pal.every(function(c) { return batchSelectedColors.has(c); });
+    if (allSelected) {
+      batchSelectedColors.clear();
+    } else {
+      pal.forEach(function(c) { batchSelectedColors.add(c); });
+    }
+    var swatches = document.querySelectorAll('.swatch');
+    for (var i = 0; i < swatches.length; i++) {
+      if (batchSelectedColors.has(pal[i])) {
+        swatches[i].classList.add('batch-selected');
+      } else {
+        swatches[i].classList.remove('batch-selected');
+      }
+    }
+    updateBatchDeleteInfo();
+  }
+
+  function confirmBatchDelete() {
+    if (batchSelectedColors.size === 0) return;
+    if (!confirm('确定删除选中的 ' + batchSelectedColors.size + ' 种颜色？')) return;
+
+    batchSelectedColors.forEach(function(color) {
+      var norm = normalizeColor(color);
+      if (!norm) return;
+      if (DEFAULT_PALETTE.indexOf(norm) !== -1) {
+        hiddenDefaults.add(norm);
+      } else {
+        var custIdx = customColors.indexOf(norm);
+        if (custIdx !== -1) customColors.splice(custIdx, 1);
+      }
+    });
+
+    localStorage.setItem('pa_hidden_defaults', JSON.stringify(Array.from(hiddenDefaults)));
+    localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+
+    var deletedCount = batchSelectedColors.size;
+    batchSelectedColors.clear();
+    toggleBatchDeleteMode();
+    buildPalette();
+    updatePaletteCount();
+
+    // 选中第一个可用颜色
+    var firstSw = document.querySelector('.swatch');
+    if (firstSw) {
+      var pal = getActivePalette();
+      selectColor(pal[0], firstSw);
+    }
+    autoSave();
   }
 
   // ---- Canva/剪映风格颜色面板交互 ----

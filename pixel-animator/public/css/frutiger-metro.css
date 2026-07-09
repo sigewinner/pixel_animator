@@ -575,6 +575,59 @@ label {
   scroll-margin: 4px !important;
 }
 
+/* ---------- Batch delete mode ---------- */
+.palette.batch-mode .swatch {
+  position: relative;
+  cursor: pointer !important;
+}
+.palette.batch-mode .swatch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.35);
+  transition: all 0.15s ease;
+}
+.palette.batch-mode .swatch.batch-selected::after {
+  content: '✓';
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  background: var(--da-red);
+  border-color: var(--da-red-dark);
+}
+.palette.batch-mode .swatch.batch-selected {
+  border: 2px solid var(--da-red) !important;
+  box-shadow: 0 0 8px rgba(232, 81, 90, 0.6) !important;
+  transform: scale(0.92);
+}
+.palette.batch-mode .swatch:hover {
+  transform: scale(1.1) !important;
+}
+.batch-delete-bar {
+  display: flex !important;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  margin-top: 6px;
+  background: linear-gradient(180deg, rgba(60, 20, 30, 0.6) 0%, rgba(40, 15, 20, 0.6) 100%) !important;
+  border: 1px solid rgba(232, 81, 90, 0.3) !important;
+  border-radius: var(--da-radius-sm) !important;
+  flex-wrap: wrap;
+}
+.batch-delete-info {
+  font-size: 11px;
+  color: var(--da-text-dim);
+  flex: 1;
+  min-width: 60px;
+}
+
 .palette .color-swatch, .temp-palette .color-swatch {
   border: 1px solid rgba(0, 0, 0, 0.4) !important;
   border-radius: 4px !important;

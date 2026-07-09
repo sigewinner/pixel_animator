@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
   <link rel="stylesheet" href="css/style.css?v=7">
-  <link rel="stylesheet" href="css/frutiger-metro.css?v=3">
+  <link rel="stylesheet" href="css/frutiger-metro.css?v=4">
 </head>
 <body class="editor">
 
@@ -151,10 +151,20 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:4px"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
             删除选中色
           </button>
+          <button class="action-btn sm" id="btnBatchDelete" title="批量删除调色板颜色">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:4px"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            批量删除
+          </button>
           <button class="action-btn sm" id="btnResetPalette" title="恢复默认调色板">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             恢复默认
           </button>
+        </div>
+        <div class="batch-delete-bar" id="batchDeleteBar" style="display:none">
+          <span class="batch-delete-info" id="batchDeleteInfo">已选 0 色</span>
+          <button class="action-btn sm" id="btnBatchSelectAll">全选</button>
+          <button class="action-btn sm danger" id="btnBatchDeleteConfirm" disabled>删除 (0)</button>
+          <button class="action-btn sm" id="btnBatchDeleteCancel">取消</button>
         </div>
         </div>
       </div>
@@ -360,7 +370,7 @@
   <script src="js/canvas-engine.js?v=8"></script>
   <script src="js/animation.js?v=7"></script>
   <script src="js/color-wheel.js?v=7"></script>
-  <script src="js/app.js?v=12"></script>
+  <script src="js/app.js?v=13"></script>
   <script>
     (function() {
       var user = Auth.requireAuth();
