@@ -713,7 +713,7 @@ label {
 }
 
 /* ---------- Palette ---------- */
-.palette, .temp-palette {
+.palette {
   border: 1px solid var(--fm-border) !important;
   background: linear-gradient(180deg, rgba(248, 250, 255, 0.6) 0%, rgba(240, 244, 250, 0.6) 100%) !important;
   border-radius: var(--fm-radius) !important;
@@ -891,7 +891,7 @@ label {
   min-width: 60px;
 }
 
-.palette .color-swatch, .temp-palette .color-swatch {
+.palette .color-swatch {
   border: 1px solid rgba(100, 130, 180, 0.3) !important;
   border-radius: 4px !important;
   box-shadow:
@@ -899,14 +899,14 @@ label {
     0 1px 2px rgba(0, 0, 0, 0.15) !important;
   transition: transform 0.1s ease, box-shadow 0.1s ease !important;
 }
-.palette .color-swatch:hover, .temp-palette .color-swatch:hover {
+.palette .color-swatch:hover {
   transform: scale(1.15) !important;
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.2),
     0 0 0 1px rgba(33, 150, 243, 0.4) !important;
   z-index: 2;
 }
-.palette .color-swatch.selected, .temp-palette .color-swatch.selected {
+.palette .color-swatch.selected {
   border: 2px solid var(--fm-blue) !important;
   box-shadow:
     0 0 10px rgba(33, 150, 243, 0.5),
@@ -1066,7 +1066,6 @@ label {
 }
 .import-hint { font-size: 11px !important; color: var(--fm-text-muted) !important; }
 .palette-count { font-size: 11px !important; color: var(--fm-text-dim) !important; font-weight: 600 !important; }
-.temp-empty { font-size: 12px !important; color: var(--fm-text-muted) !important; }
 
 /* ---------- Fix hardcoded dark backgrounds from style.css ---------- */
 /* Frame thumbnails had hardcoded #1a1a2e dark bg */

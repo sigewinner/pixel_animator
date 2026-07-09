@@ -290,7 +290,6 @@
       renderFrameList();
       updateSizeDisplay();
       updateZoomLabel();
-      renderTempPalette();
       // 清空历史
       undoStack = [];
       redoStack = [];
@@ -401,7 +400,6 @@
     renderFrameList();
     updateSizeDisplay();
     updateZoomLabel();
-    renderTempPalette();
 
     await loadProject();
 
@@ -798,64 +796,6 @@
         }
       });
     }
-  }
-
-  // ---- 临时调色板 ----
-  var MAX_TEMP_COLORS = 10;
-  var tempPalette = [];
-
-  function addToTempPalette(color) {
-    var norm = normalizeColor(color);
-    if (!norm) return;
-    var idx = tempPalette.indexOf(norm);
-    if (idx !== -1) tempPalette.splice(idx, 1);
-    tempPalette.unshift(norm);
-    if (tempPalette.length > MAX_TEMP_COLORS) tempPalette.pop();
-    renderTempPalette();
-  }
-
-  function renderTempPalette() {
-    var container = document.getElementById('tempPalette');
-    if (!container) return;
-    container.innerHTML = '';
-    if (tempPalette.length === 0) {
-      var empty = document.createElement('span');
-      empty.className = 'temp-empty';
-      empty.textContent = '🎨 点击吸管取色';
-      container.appendChild(empty);
-      return;
-    }
-    tempPalette.forEach(function(color, i) {
-      var sw = document.createElement('button');
-      sw.className = 'temp-swatch';
-      sw.style.background = color;
-      sw.title = color + ' (点击使用，右键移除)';
-      sw.dataset.color = color;
-      sw.addEventListener('click', function() {
-        var norm = normalizeColor(color);
-        if (norm) {
-          engine.setColor(norm);
-          selectedColor = norm;
-          document.getElementById('colorPicker').value = norm;
-          updateColorPanel(norm, false);
-          document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
-          document.querySelectorAll('.temp-swatch').forEach(function(s) { s.classList.remove('active'); });
-          sw.classList.add('active');
-          SFX.pick();
-          switchToPencil();
-        }
-      });
-      sw.addEventListener('contextmenu', function(e) {
-        e.preventDefault();
-        tempPalette.splice(i, 1);
-        renderTempPalette();
-      });
-      container.appendChild(sw);
-    });
-    var count = document.createElement('span');
-    count.className = 'temp-count';
-    count.textContent = tempPalette.length + '/' + MAX_TEMP_COLORS;
-    container.appendChild(count);
   }
 
   // ---- 色轮 ----
