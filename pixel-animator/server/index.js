@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const { stmts } = require('./db');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -46,8 +46,6 @@ app.post('/api/auth/login', (req, res) => {
     res.json({ ok: false, error: err.message });
   }
 });
-
-// ---- 作品操作 ----
 
 // 创建作品
 app.post('/api/works', (req, res) => {
@@ -106,50 +104,6 @@ app.delete('/api/works/:id', (req, res) => {
 app.post('/api/works/:id/like', (req, res) => {
   try {
     stmts.addLike.run(req.params.id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// ---- 项目草稿 ----
-
-// 获取当前用户的项目
-app.get('/api/project', (req, res) => {
-  try {
-    // 简单演示：通过请求头 x-username 获取用户名（实际应使用 session/token）
-    const username = req.headers['x-username'];
-    if (!username) return res.status(401).json({ ok: false, error: '未登录' });
-
-    const user = stmts.findUserByName.get(username);
-    if (!user) return res.status(404).json({ ok: false, error: '用户不存在' });
-
-    const row = stmts.getProject.get(user.id);
-    if (!row) return res.json({ ok: true, project: null });
-
-    res.json({ ok: true, project: JSON.parse(row.project_data) });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// 保存项目草稿
-app.post('/api/project', (req, res) => {
-  try {
-    const username = req.headers['x-username'];
-    if (!username) return res.status(401).json({ ok: false, error: '未登录' });
-
-    const user = stmts.findUserByName.get(username);
-    if (!user) return res.status(404).json({ ok: false, error: '用户不存在' });
-
-    const { project } = req.body;
-    if (!project) return res.status(400).json({ ok: false, error: '缺少项目数据' });
-
-    stmts.saveProject.run({
-      user_id: user.id,
-      project_data: JSON.stringify(project),
-    });
-
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

@@ -1,0 +1,12 @@
+# 依赖
+node_modules/
+
+# 运行时数据（SQLite 数据库等，运行时自动生成）
+data/
+
+# 日志
+*.log
+
+# 本地 / 编辑器配置
+.workbuddy/
+.DS_Store

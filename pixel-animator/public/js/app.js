@@ -1,10 +1,150 @@
 // public/js/app.js - 快照方案，绝对不出错
 // [MODIFIED] 默认分辨率从 32 改为 128
+// [MODIFIED] 集成 WindowManager 实现 Win98 风格多窗口画布管理
 (function () {
   var canvasW = 128;
   var canvasH = 128;
   var zoomLevel = 1.0;
   var basePixelSize = 16;
+  var panX = 0;
+  var panY = 0;
+
+  // ---- 多画布标签系统 ----
+  var canvasTabs = [];
+  var activeTabIndex = 0;
+
+  // ---- 缓存的可编辑画布容器引用（避免被移出文档后 getElementById 失效）----
+  var canvasWrapEl = null;
+  var cropBarEl = null;
+
+  // ---- WindowManager 辅助函数 ----
+  function getViewportEl() {
+    if (typeof WindowManager !== 'undefined' && WindowManager.getActiveBodyEl) {
+      return WindowManager.getActiveBodyEl();
+    }
+    return document.getElementById('canvasViewport');
+  }
+
+  function moveCanvasToActiveWindow(targetIndex) {
+    if (typeof WindowManager === 'undefined') return;
+    var tab = canvasTabs[targetIndex];
+    if (!tab) return;
+    var winObj = WindowManager.getWindowByTabIndex(targetIndex);
+    if (!winObj) return;
+    var bodyEl = winObj.el.querySelector('.win-active-area');
+    if (!bodyEl) return;
+
+    var wrap = canvasWrapEl || document.getElementById('canvasWrap');
+    if (wrap && wrap.parentElement !== bodyEl) {
+      bodyEl.appendChild(wrap);
+    }
+
+    var cropBar = cropBarEl || document.getElementById('cropBar');
+    if (cropBar && cropBar.parentElement !== bodyEl) {
+      bodyEl.appendChild(cropBar);
+    }
+  }
+
+  function autoFitCanvasToWindow() {
+    if (typeof WindowManager === 'undefined' || !engine) return;
+    var winObj = WindowManager.getWindowByTabIndex(activeTabIndex);
+    if (!winObj) return;
+    var winBody = winObj.el.querySelector('.win-body');
+    if (!winBody) return;
+
+    // Force layout computation
+    var bodyRect = winBody.getBoundingClientRect();
+    var bodyW = bodyRect.width;
+    var bodyH = bodyRect.height;
+    // win-body padding = 8px each side, so available content area:
+    // In border-box: clientWidth includes padding, so available = clientWidth - padding*2
+    var availableW = winBody.clientWidth - 16; // body padding 8+8
+    var availableH = winBody.clientHeight - 16;
+
+    if (availableW < 20 || availableH < 20) {
+      // Body too small — delay autoFit until layout completes
+      requestAnimationFrame(function() { autoFitCanvasToWindow(); });
+      return;
+    }
+
+    // Calculate the pixelSize that makes canvasWrap fit inside winBody
+    // canvasWrap total size = canvasW * ps + padding(32) + border(2)
+    // In border-box mode: style.width = content + padding + border
+    // So: canvasW * ps + 34 <= availableW AND canvasH * ps + 34 <= availableH
+    // ps <= (availableW - 34) / canvasW AND ps <= (availableH - 34) / canvasH
+    var fitPs = Math.floor(Math.min(
+      (availableW - 34) / canvasW,
+      (availableH - 34) / canvasH
+    ));
+    fitPs = Math.max(2, Math.min(48, fitPs)); // Minimum ps=2 for visibility
+
+    var currentPs = engine.pixelSize || basePixelSize;
+    if (fitPs !== currentPs) {
+      basePixelSize = fitPs;
+      zoomLevel = 1.0;
+      engine.setPixelSize(fitPs);
+      setWrapSize();
+      centerCanvas();
+      updateZoomLabel();
+      // Update tab data
+      if (canvasTabs[activeTabIndex]) {
+        canvasTabs[activeTabIndex].basePixelSize = basePixelSize;
+        canvasTabs[activeTabIndex].zoomLevel = zoomLevel;
+      }
+      // Update window status bar
+      var tab = canvasTabs[activeTabIndex];
+      if (tab && tab._winId) {
+        WindowManager.updateWindowZoom(tab._winId, Math.round(zoomLevel * 100));
+      }
+    }
+  }
+
+  function renderInactiveWindowPreviews() {
+    if (typeof WindowManager === 'undefined') return;
+    // Use requestAnimationFrame to ensure DOM layout is complete before rendering
+    requestAnimationFrame(function() {
+      for (var i = 0; i < canvasTabs.length; i++) {
+        if (i === activeTabIndex) continue;
+        var tab = canvasTabs[i];
+        if (!tab._winId) continue;
+        var frame = tab.frames[tab.currentFrame] || tab.frames[0];
+        if (!frame) continue;
+        var composite = LayerUtils.getCompositePixels(
+          frame,
+          tab.canvasW,
+          tab.canvasH
+        );
+        WindowManager.renderPreview(tab._winId, composite, tab.canvasW, tab.canvasH);
+      }
+    });
+  }
+
+  function updateCanvasPosition() {
+    var wrap = document.getElementById('canvasWrap');
+    if (wrap) {
+      wrap.style.transform = 'translate(' + panX + 'px, ' + panY + 'px)';
+    }
+  }
+
+  function setWrapSize() {
+    var wrap = document.getElementById('canvasWrap');
+    if (!wrap || !engine) return;
+    var ps = engine.pixelSize || basePixelSize;
+    // In border-box mode: style.width = content + padding + border
+    // content = canvasW * ps (drawCanvas intrinsic size)
+    // padding = 16*2 = 32
+    // border = 1*2 = 2 (frutiger-metro.css: 1px solid)
+    var w = canvasW * ps + 32 + 2;
+    var h = canvasH * ps + 32 + 2;
+    wrap.style.width = w + 'px';
+    wrap.style.height = h + 'px';
+  }
+
+  function centerCanvas() {
+    panX = 0;
+    panY = 0;
+    updateCanvasPosition();
+  }
 
   function computePixelSize(w, h) {
     var maxDim = Math.max(w, h);
@@ -142,6 +282,8 @@
     if (eraserSizeControl) eraserSizeControl.style.display = 'none';
     var penSizeControl = document.getElementById('penSizeControl');
     if (penSizeControl) penSizeControl.style.display = 'flex';
+    var eraserCursor = document.getElementById('eraserCursor');
+    if (eraserCursor) eraserCursor.style.display = 'none';
     isDeletingColor = false;
   }
 
@@ -154,27 +296,360 @@
     if (fn) fn();
   }
 
+  // ---- 多画布标签管理 ----
+  function createCanvasTab(name, res, ratio) {
+    var resolution = res || parseInt(document.getElementById('resolutionSelect').value) || 128;
+    var ratioKey = ratio || document.getElementById('ratioSelect').value || '1:1';
+    var dims = computeDims(resolution, ratioKey);
+    var w = dims.w, h = dims.h;
+    var ps = computePixelSize(w, h);
+    return {
+      id: Date.now() + Math.random(),
+      name: name || ('画布 ' + (canvasTabs.length + 1)),
+      canvasW: w,
+      canvasH: h,
+      resolution: resolution,
+      ratio: ratioKey,
+      zoomLevel: 1.0,
+      basePixelSize: ps,
+      panX: 0,
+      panY: 0,
+      frames: [LayerUtils.createFrame(w, h, 'Background')],
+      currentFrame: 0,
+      fps: 12,
+      undoStack: [],
+      redoStack: [],
+      _winId: null,
+    };
+  }
+
+  function saveCurrentTabState() {
+    if (canvasTabs.length === 0 || activeTabIndex < 0 || activeTabIndex >= canvasTabs.length) return;
+    var tab = canvasTabs[activeTabIndex];
+    if (anim) anim.syncCurrentFrame();
+    tab.frames = anim.frames.map(function(f) { return LayerUtils.cloneFrame(f); });
+    tab.currentFrame = anim.current;
+    tab.fps = anim.fps;
+    tab.canvasW = canvasW;
+    tab.canvasH = canvasH;
+    tab.zoomLevel = zoomLevel;
+    tab.basePixelSize = basePixelSize;
+    tab.panX = panX;
+    tab.panY = panY;
+    tab.resolution = parseInt(document.getElementById('resolutionSelect').value);
+    tab.ratio = document.getElementById('ratioSelect').value;
+    tab.undoStack = undoStack.slice();
+    tab.redoStack = redoStack.slice();
+  }
+
+  function loadTabState(index) {
+    if (index < 0 || index >= canvasTabs.length) return;
+    var tab = canvasTabs[index];
+
+    canvasW = tab.canvasW;
+    canvasH = tab.canvasH;
+    basePixelSize = tab.basePixelSize;
+    zoomLevel = tab.zoomLevel;
+    panX = tab.panX;
+    panY = tab.panY;
+
+    engine.resize(canvasW, canvasH, basePixelSize);
+    anim.width = canvasW;
+    anim.height = canvasH;
+    anim.emptyPixel = function() { return new Array(canvasW * canvasH).fill(null); };
+    anim.frames = tab.frames.map(function(f) { return LayerUtils.cloneFrame(f); });
+    anim.current = tab.currentFrame;
+    anim.fps = tab.fps;
+
+    undoStack = tab.undoStack.slice();
+    redoStack = tab.redoStack.slice();
+
+    document.getElementById('resolutionSelect').value = tab.resolution;
+    document.getElementById('ratioSelect').value = tab.ratio;
+    document.getElementById('fpsSlider').value = anim.fps;
+    document.getElementById('fpsLabel').textContent = anim.fps + ' FPS';
+
+    if (anim.frames.length > 0) {
+      engine.loadFrame(anim.frames[anim.current]);
+    } else {
+      anim.frames = [LayerUtils.createFrame(canvasW, canvasH, 'Background')];
+      anim.current = 0;
+      engine.loadFrame(anim.frames[0]);
+    }
+    anim._renderOnion();
+
+    // 移动 canvasWrap 到活动窗口
+    moveCanvasToActiveWindow(index);
+
+    updateCanvasPosition();
+    setWrapSize();
+    updateSizeDisplay();
+    setZoom(zoomLevel);
+    renderFrameList();
+    renderLayerList();
+
+    // 更新窗口状态栏信息
+    if (typeof WindowManager !== 'undefined' && tab._winId) {
+      WindowManager.updateWindowZoom(tab._winId, Math.round(zoomLevel * 100));
+      WindowManager.updateWindowSize(tab._winId, tab.canvasW, tab.canvasH);
+    }
+  }
+
+  function switchTab(index) {
+    if (index === activeTabIndex) return;
+    if (anim && anim.playing) {
+      anim.stop();
+      document.getElementById('btnPlay').textContent = '播放';
+    }
+    saveCurrentTabState();
+    activeTabIndex = index;
+
+    // 窗口系统：先激活对应窗口（添加 .active 类使 .win-active-area 可见）
+    // 这样后续的 DOM 移动和渲染都在可见容器中执行
+    var tab = canvasTabs[index];
+    if (typeof WindowManager !== 'undefined' && tab._winId) {
+      // 临时禁用 onActivate 回调，避免循环调用 switchTab
+      var origOnActivate = WindowManager.onActivate;
+      WindowManager.onActivate = null;
+      WindowManager.activateWindow(tab._winId);
+      WindowManager.onActivate = origOnActivate;
+    }
+
+    // 现在窗口已激活，.win-active-area 是 display:flex（可见）
+    moveCanvasToActiveWindow(index);
+    loadTabState(index);
+
+    // 加载状态后，如果画布超出窗口则自动缩放适应
+    autoFitCanvasToWindow();
+
+    // 确保 engine 在新窗口环境中渲染
+    if (engine) engine.render();
+
+    renderInactiveWindowPreviews();
+    SFX.select();
+  }
+
+  function addCanvasTab() {
+    saveCurrentTabState();
+    var newTab = createCanvasTab();
+    canvasTabs.push(newTab);
+
+    // 窗口系统：创建新窗口
+    var newIndex = canvasTabs.length - 1;
+    if (typeof WindowManager !== 'undefined') {
+      var winObj = WindowManager.createWindow(newTab, newIndex);
+      newTab._winId = newTab.id;  // winId matches the tab's id
+    }
+
+    activeTabIndex = newIndex;
+
+    // 先激活窗口（使 .win-active-area 可见）
+    if (typeof WindowManager !== 'undefined') {
+      var origOnActivate = WindowManager.onActivate;
+      WindowManager.onActivate = null;
+      WindowManager.activateWindow(newTab._winId);
+      WindowManager.onActivate = origOnActivate;
+    }
+
+    // 现在窗口已激活，.win-active-area 可见
+    moveCanvasToActiveWindow(activeTabIndex);
+    loadTabState(activeTabIndex);
+    autoFitCanvasToWindow();
+    if (engine) engine.render();
+
+    renderInactiveWindowPreviews();
+    autoSave();
+    SFX.add();
+  }
+
+  function closeCanvasTab(index) {
+    if (canvasTabs.length <= 1) {
+      alert('至少保留一个画布');
+      return;
+    }
+    if (!confirm('确定删除画布「' + canvasTabs[index].name + '」？\n该画布的所有帧和图层将被删除。')) return;
+
+    var tabToClose = canvasTabs[index];
+
+    // 窗口系统：销毁窗口
+    if (typeof WindowManager !== 'undefined' && tabToClose._winId) {
+      WindowManager.destroyWindow(tabToClose._winId);
+    }
+
+    canvasTabs.splice(index, 1);
+    if (activeTabIndex >= canvasTabs.length) {
+      activeTabIndex = canvasTabs.length - 1;
+    } else if (index < activeTabIndex) {
+      activeTabIndex--;
+    }
+
+    // 更新所有窗口的 tabIndex 以匹配新的 canvasTabs 顺序
+    if (typeof WindowManager !== 'undefined') {
+      for (var ti = 0; ti < canvasTabs.length; ti++) {
+        if (canvasTabs[ti]._winId) {
+          WindowManager.updateTabIndex(canvasTabs[ti]._winId, ti);
+        }
+      }
+    }
+
+    // 先激活窗口（使 .win-active-area 可见）
+    var newTab = canvasTabs[activeTabIndex];
+    if (typeof WindowManager !== 'undefined' && newTab._winId) {
+      var origOnActivate = WindowManager.onActivate;
+      WindowManager.onActivate = null;
+      WindowManager.activateWindow(newTab._winId);
+      WindowManager.onActivate = origOnActivate;
+    }
+
+    // 现在窗口已激活，.win-active-area 可见
+    moveCanvasToActiveWindow(activeTabIndex);
+    loadTabState(activeTabIndex);
+    autoFitCanvasToWindow();
+    if (engine) engine.render();
+
+    renderInactiveWindowPreviews();
+    autoSave();
+    SFX.delete();
+  }
+
+  function renameCanvasTab(index) {
+    var tab = canvasTabs[index];
+    var newName = prompt('画布名称:', tab.name);
+    if (newName && newName.trim()) {
+      tab.name = newName.trim();
+      // 窗口系统：更新标题
+      if (typeof WindowManager !== 'undefined' && tab._winId) {
+        WindowManager.updateWindowTitle(tab._winId, tab.name);
+      }
+      autoSave();
+    }
+  }
+
+  function bindCanvasTabs() {
+    // 旧的 btnAddCanvas 保留兼容
+    var addBtn = document.getElementById('btnAddCanvas');
+    if (addBtn) {
+      addBtn.addEventListener('click', function() {
+        addCanvasTab();
+      });
+    }
+
+    // WindowManager 回调设置
+    if (typeof WindowManager !== 'undefined') {
+      WindowManager.onActivate = function(tabIndex) {
+        if (tabIndex !== undefined && tabIndex !== activeTabIndex) {
+          switchTab(tabIndex);
+
+          // Forward pending click to drawCanvas after DOM migration completes
+          // This simulates real OS behavior: clicking inactive window activates AND interacts
+          if (WindowManager._pendingClick) {
+            var pending = WindowManager._pendingClick;
+            WindowManager._pendingClick = null;
+            requestAnimationFrame(function() {
+              var canvas = document.getElementById('drawCanvas');
+              if (canvas) {
+                // Simulate mousedown at the same screen position
+                var simulatedEvent = new MouseEvent('mousedown', {
+                  clientX: pending.clientX,
+                  clientY: pending.clientY,
+                  bubbles: true,
+                  cancelable: true
+                });
+                canvas.dispatchEvent(simulatedEvent);
+              }
+            });
+          }
+        }
+      };
+
+      WindowManager.onClose = function(tabIndex) {
+        closeCanvasTab(tabIndex);
+      };
+
+      WindowManager.onRename = function(tabIndex) {
+        renameCanvasTab(tabIndex);
+      };
+
+      WindowManager.onAddCanvas = function() {
+        addCanvasTab();
+      };
+
+      WindowManager.onZoomIn = function() {
+        SFX.zoomIn();
+        setZoom(zoomLevel * 1.5);
+      };
+
+      WindowManager.onZoomOut = function() {
+        SFX.zoomOut();
+        setZoom(zoomLevel / 1.5);
+      };
+
+    }
+  }
+
   // ---- 项目草稿保存 ----
   var saveTimeout = null;
   var isSaving = false;
 
-  function getCurrentProjectData() {
-    anim.syncCurrentFrame();
-    for (var i = 0; i < anim.frames.length; i++) {
-      normalizeFrame(anim.frames[i]);
+  function getCanvasThumbnail(tab) {
+    var frame = LayerUtils.getCompositePixels(tab.frames[0], tab.canvasW, tab.canvasH);
+    var tmp = document.createElement('canvas');
+    var ps = 4;
+    tmp.width = tab.canvasW * ps;
+    tmp.height = tab.canvasH * ps;
+    var ctx = tmp.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, tmp.width, tmp.height);
+    for (var y = 0; y < tab.canvasH; y++) {
+      for (var x = 0; x < tab.canvasW; x++) {
+        var c = frame[y * tab.canvasW + x];
+        if (c) { ctx.fillStyle = c; ctx.fillRect(x * ps, y * ps, ps, ps); }
+      }
     }
+    return tmp.toDataURL('image/png');
+  }
+
+  function getCurrentProjectData() {
+    saveCurrentTabState();
+
+    var canvasesData = canvasTabs.map(function(tab) {
+      var layerFrames = tab.frames.map(function(f) {
+        var frame = LayerUtils.cloneFrame(f);
+        normalizeFrame(frame);
+        return frame;
+      });
+      var compositeFrames = layerFrames.map(function(f) {
+        return LayerUtils.getCompositePixels(f, tab.canvasW, tab.canvasH);
+      });
+      return {
+        name: tab.name,
+        width: tab.canvasW,
+        height: tab.canvasH,
+        resolution: tab.resolution,
+        ratio: tab.ratio,
+        fps: tab.fps,
+        frames: compositeFrames,
+        layerFrames: layerFrames,
+        currentFrame: tab.currentFrame,
+      };
+    });
+
+    var first = canvasesData[0] || {};
+
     return {
       title: document.getElementById('workTitle').value.trim() || '未命名作品',
       author: document.getElementById('workAuthor').value.trim() || '匿名',
-      width: engine.width,
-      height: engine.height,
-      fps: anim.fps,
-      frames: anim.getAllFrames(),
-      layerFrames: anim.getAllLayerFrames(),
-      currentFrame: anim.current,
+      canvases: canvasesData,
+      // Backward compat (first canvas)
+      width: first.width || 128,
+      height: first.height || 128,
+      fps: first.fps || 12,
+      frames: first.frames || [],
+      layerFrames: first.layerFrames || [],
+      currentFrame: first.currentFrame || 0,
       palette: getActivePalette(),
       customColors: customColors,
-      thumbnail: anim.getThumbnail(),
+      thumbnail: canvasTabs.length > 0 ? getCanvasThumbnail(canvasTabs[0]) : '',
       savedAt: new Date().toISOString(),
     };
   }
@@ -264,54 +739,99 @@
     }
 
     if (project) {
-      var width = project.width, height = project.height, currentFrame = project.currentFrame, fps = project.fps;
-      // ★ 版本不匹配则丢弃旧草稿：让新默认分辨率生效
-      var defaultRes = parseInt(document.getElementById('resolutionSelect').value);
-      var defaultRatio = document.getElementById('ratioSelect').value;
-      var defaultDims = computeDims(defaultRes, defaultRatio);
-      if (width !== defaultDims.w || height !== defaultDims.h) {
-        console.log('[loadProject] 旧草稿尺寸 ' + width + 'x' + height + ' 与默认 ' + defaultDims.w + 'x' + defaultDims.h + ' 不一致，丢弃旧草稿');
-        try { localStorage.removeItem('pa_local_project'); } catch (e) {}
-        return false;
+      // Restore palette/customColors
+      if (project.customColors) {
+        customColors = project.customColors;
+        localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
       }
-      canvasW = width;
-      canvasH = height;
-      var newPixelSize = computePixelSize(width, height);
-      engine.resize(width, height, newPixelSize);
-      anim.resize(width, height);
-      // 优先使用图层帧数据，回退到旧版扁平数组
+      document.getElementById('workTitle').value = project.title || '';
+      document.getElementById('workAuthor').value = project.author || '';
+
+      if (project.canvases && project.canvases.length > 0) {
+        // Multi-canvas project
+        canvasTabs = project.canvases.map(function(c, idx) {
+          var frames;
+          if (c.layerFrames && c.layerFrames.length > 0) {
+            frames = c.layerFrames.map(function(f) {
+              var frame = LayerUtils.cloneFrame(f);
+              normalizeFrame(frame);
+              return frame;
+            });
+          } else {
+            frames = (c.frames || []).map(function(f) {
+              var frame = LayerUtils.convertLegacyFrame(f, c.width, c.height);
+              normalizeFrame(frame);
+              return frame;
+            });
+          }
+          if (frames.length === 0) {
+            frames = [LayerUtils.createFrame(c.width, c.height, 'Background')];
+          }
+          return {
+            id: Date.now() + Math.random() + idx,
+            name: c.name || ('画布 ' + (idx + 1)),
+            canvasW: c.width,
+            canvasH: c.height,
+            resolution: c.resolution || 128,
+            ratio: c.ratio || '1:1',
+            zoomLevel: 1.0,
+            basePixelSize: computePixelSize(c.width, c.height),
+            panX: 0,
+            panY: 0,
+            frames: frames,
+            currentFrame: c.currentFrame || 0,
+            fps: c.fps || 12,
+            undoStack: [],
+            redoStack: [],
+            _winId: null,
+          };
+        });
+        activeTabIndex = 0;
+        buildPalette();
+        loadTabState(0);
+        undoStack = [];
+        redoStack = [];
+        return true;
+      }
+
+      // Legacy single-canvas project
+      var width = project.width, height = project.height, currentFrame = project.currentFrame, fps = project.fps;
+      canvasTabs = [{
+        id: Date.now() + Math.random(),
+        name: '画布 1',
+        canvasW: width,
+        canvasH: height,
+        resolution: 128,
+        ratio: '1:1',
+        zoomLevel: 1.0,
+        basePixelSize: computePixelSize(width, height),
+        panX: 0,
+        panY: 0,
+        frames: [],
+        currentFrame: currentFrame || 0,
+        fps: fps || 12,
+        undoStack: [],
+        redoStack: [],
+        _winId: null,
+      }];
+
       if (project.layerFrames && project.layerFrames.length > 0) {
-        anim.frames = project.layerFrames.map(function(f) {
+        canvasTabs[0].frames = project.layerFrames.map(function(f) {
           var frame = LayerUtils.cloneFrame(f);
           normalizeFrame(frame);
           return frame;
         });
       } else {
-        anim.frames = project.frames.map(function(f) {
+        canvasTabs[0].frames = project.frames.map(function(f) {
           var frame = LayerUtils.convertLegacyFrame(f, width, height);
           normalizeFrame(frame);
           return frame;
         });
       }
-      anim.current = currentFrame || 0;
-      anim.fps = fps || 12;
-      document.getElementById('workTitle').value = project.title || '';
-      document.getElementById('workAuthor').value = project.author || '';
-      document.getElementById('fpsSlider').value = anim.fps;
-      document.getElementById('fpsLabel').textContent = anim.fps + ' FPS';
-      syncSizeSelectors(width, height);
-      engine.loadFrame(anim.frames[anim.current]);
-      anim._renderOnion();
-      if (project.customColors) {
-        customColors = project.customColors;
-        localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
-        buildPalette();
-      }
-      renderFrameList();
-      renderLayerList();
-      updateSizeDisplay();
-      updateZoomLabel();
-      // 清空历史
+
+      activeTabIndex = 0;
+      buildPalette();
+      loadTabState(0);
       undoStack = [];
       redoStack = [];
       return true;
@@ -332,15 +852,23 @@
     engine = new CanvasEngine(canvas, canvasW, canvasH, basePixelSize);
     anim = new Animation(engine, canvasW, canvasH);
 
-    // ★★★ 绘制完成时同步帧 + 保存快照 ★★★
+    // ★★★ 绘制完成时同步帧 + 保存快照 + 更新窗口预览 ★★★
     engine.onDrawEnd = function() {
       pushSnapshot();
+      renderInactiveWindowPreviews();
     };
 
     // 图层变化时刷新图层面板
     engine.onLayersChange = function() {
       renderLayerList();
       autoSave();
+    };
+
+    // 画布拖动回调
+    engine.onPanMove = function(dx, dy) {
+      panX += dx;
+      panY += dy;
+      updateCanvasPosition();
     };
 
     engine.onColorPick = function(color) {
@@ -373,6 +901,7 @@
           alert('已删除 ' + count + ' 个像素。');
           // 删除颜色也是一个操作，保存快照
           pushSnapshot();
+          renderInactiveWindowPreviews();
         } else {
           alert('当前帧中没有该颜色。');
         }
@@ -408,11 +937,17 @@
     bindImport();
     bindVideoImport();
     bindCanvasSize();
+    bindResizers();
     bindCrop();
     bindColorWheel();
     bindPaletteActions();
     bindZoom();
+    bindCanvasDrag();
+    bindCanvasResize();
+    bindWheelZoom();
+    bindEraserCursor();
     bindLayers();
+    bindCanvasTabs();
 
     var fitModeSelect = document.getElementById('fitMode');
     if (fitModeSelect) fitModeSelect.value = 'contain';
@@ -428,15 +963,66 @@
     updateSizeDisplay();
     updateZoomLabel();
 
-    await loadProject();
+    // 初始化第一个画布标签
+    canvasTabs = [createCanvasTab('画布 1', res, ratio)];
+    activeTabIndex = 0;
 
-    if (anim.frames.length === 0) {
-      anim.frames = [LayerUtils.createFrame(canvasW, canvasH, 'Background')];
-      anim.current = 0;
-      engine.loadFrame(anim.frames[0]);
-      engine.render();
-      renderFrameList();
-      renderLayerList();
+    await loadProject();
+    setWrapSize();
+
+    // 确保引擎已加载当前画布的帧数据。
+    // 重要：createCanvasTab 已为画布预置了 frames（长度 1），所以原先的
+    // “frames.length === 0” 判断永远为假，导致全新项目时 loadTabState 从未被调用，
+    // engine.frameData 始终为 null —— 绘制无法持久化，一切换画布当前内容即被清空。
+    // 改为：只要引擎还没加载过帧数据（frameData 为 null）就加载一次。
+    if (canvasTabs.length > 0 && !engine.getFrameData()) {
+      if (canvasTabs[activeTabIndex].frames.length === 0) {
+        canvasTabs[activeTabIndex].frames = [LayerUtils.createFrame(canvasW, canvasH, 'Background')];
+        canvasTabs[activeTabIndex].currentFrame = 0;
+      }
+      loadTabState(activeTabIndex);
+    }
+
+    // ---- WindowManager 初始化 ----
+    if (typeof WindowManager !== 'undefined') {
+      var desktop = document.getElementById('desktopArea');
+      var taskbar = document.getElementById('desktopTaskbar');
+
+      if (desktop && taskbar) {
+        WindowManager.init(desktop, taskbar);
+      }
+
+      // 从模板中取出 canvasWrap（仅隐藏模板，不要 removeChild 摘离文档，
+      // 否则 moveCanvasToActiveWindow 里的 getElementById 会找不到它）
+      var wrapTemplate = document.getElementById('canvasWrapTemplate');
+      canvasWrapEl = document.getElementById('canvasWrap');
+      cropBarEl = document.getElementById('cropBar');
+      if (wrapTemplate) wrapTemplate.style.display = 'none';
+
+      // 隐藏旧的 viewport / tabBar
+      var vp = document.getElementById('canvasViewport');
+      if (vp) vp.style.display = 'none';
+      var tabEl = document.getElementById('canvasTabs');
+      if (tabEl) tabEl.style.display = 'none';
+      var tabBar = document.getElementById('canvasTabBar');
+      if (tabBar) tabBar.style.display = 'none';
+
+      // 重建所有窗口（确保 desktop-area 已有尺寸 — 触发强制布局）
+      // Force layout calculation before creating windows
+      desktop.getBoundingClientRect();
+
+      WindowManager.rebuildAllWindows(canvasTabs, activeTabIndex);
+
+      // 移动 canvasWrap 和 cropBar 到活动窗口
+      moveCanvasToActiveWindow(activeTabIndex);
+
+      // Delay autoFit and preview rendering until DOM layout completes
+      requestAnimationFrame(function() {
+        autoFitCanvasToWindow();
+        // 确保 engine 在新环境中重新渲染
+        if (engine) engine.render();
+        renderInactiveWindowPreviews();
+      });
     }
 
     document.getElementById('btnSaveDraft').addEventListener('click', function() {
@@ -913,7 +1499,70 @@
         if (penSizeControl) {
           penSizeControl.style.display = btn.dataset.tool === 'pencil' ? 'flex' : 'none';
         }
+
+        // 更新画布光标
+        var cv = document.getElementById('drawCanvas');
+        cv.classList.toggle('tool-pan', btn.dataset.tool === 'pan');
       });
+    });
+
+    // 图形子菜单
+    var shapeSubmenu = document.getElementById('shapeSubmenu');
+    var btnShape = document.getElementById('btnShape');
+    var shapeIcon = document.getElementById('shapeIcon');
+    var shapeIcons = {
+      circle: '<circle cx="12" cy="12" r="8"/>',
+      ellipse: '<ellipse cx="12" cy="12" rx="9" ry="6"/>',
+      rect: '<rect x="4" y="5" width="16" height="14"/>',
+      triangle: '<path d="M12 4l8 15H4z" stroke-linejoin="round"/>',
+      star: '<path d="M12 3l2.5 6.5L21 10l-5 4.5L17.5 21 12 17.5 6.5 21 8 14.5 3 10l6.5-.5z" stroke-linejoin="round"/>',
+      diamond: '<path d="M12 3l8 9-8 9-8-9z" stroke-linejoin="round"/>',
+      heart: '<path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z" stroke-linejoin="round"/>'
+    };
+    var currentShapeType = 'circle';
+
+    // 点击主按钮：如果已是图形工具则切换菜单，否则激活图形工具
+    btnShape.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (engine.tool === 'shape') {
+        shapeSubmenu.classList.toggle('show');
+      } else {
+        // 激活图形工具
+        SFX.select();
+        document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
+        btnShape.classList.add('active');
+        engine.setTool('shape');
+        shapeSubmenu.classList.add('show');
+      }
+    });
+
+    document.querySelectorAll('.shape-option').forEach(function(opt) {
+      opt.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var shapeType = opt.dataset.shape;
+        currentShapeType = shapeType;
+        // 更新选中状态
+        document.querySelectorAll('.shape-option').forEach(function(o) { o.classList.remove('active'); });
+        opt.classList.add('active');
+        // 更新主按钮图标
+        shapeIcon.innerHTML = shapeIcons[shapeType] || shapeIcons.circle;
+        // 设置引擎图形类型
+        engine.setShapeType(shapeType);
+        // 激活图形工具
+        SFX.select();
+        document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
+        btnShape.classList.add('active');
+        engine.setTool('shape');
+        // 关闭子菜单
+        shapeSubmenu.classList.remove('show');
+      });
+    });
+
+    // 点击其他区域关闭子菜单
+    document.addEventListener('click', function(e) {
+      if (!shapeSubmenu.contains(e.target) && e.target !== btnShape) {
+        shapeSubmenu.classList.remove('show');
+      }
     });
 
     document.getElementById('btnUndo').addEventListener('click', function() {
@@ -922,6 +1571,7 @@
         alert('没有可撤销的操作');
       } else {
         SFX.undo();
+        renderInactiveWindowPreviews();
       }
     });
 
@@ -931,6 +1581,7 @@
         alert('没有可重做的操作');
       } else {
         SFX.redo();
+        renderInactiveWindowPreviews();
       }
     });
 
@@ -942,6 +1593,7 @@
         var idx = anim.current;
         anim.frames[idx] = engine.pixels.slice();
         pushSnapshot();
+        renderInactiveWindowPreviews();
         autoSave();
       }
     });
@@ -989,6 +1641,7 @@
       pushSnapshot();
       renderFrameList();
       renderLayerList();
+      renderInactiveWindowPreviews();
       autoSave();
     };
 
@@ -998,6 +1651,7 @@
       pushSnapshot();
       renderFrameList();
       renderLayerList();
+      renderInactiveWindowPreviews();
       autoSave();
     };
 
@@ -1007,6 +1661,7 @@
       pushSnapshot();
       renderFrameList();
       renderLayerList();
+      renderInactiveWindowPreviews();
       autoSave();
     };
 
@@ -1015,6 +1670,7 @@
       pushSnapshot();
       renderFrameList();
       renderLayerList();
+      renderInactiveWindowPreviews();
       autoSave();
     };
 
@@ -1030,6 +1686,24 @@
         return;
       }
       anim.deleteFrame();
+    });
+
+    document.getElementById('btnDelAllFrames').addEventListener('click', function() {
+      if (anim.frames.length <= 1) {
+        alert('当前只有一帧，无需清空。');
+        return;
+      }
+      if (!confirm('确定删除所有帧？\n这将清空全部 ' + anim.frames.length + ' 帧动画，仅保留一个空白帧。\n此操作可通过撤销(Ctrl+Z)恢复。')) return;
+      // 重置为单个空白帧
+      anim.frames = [LayerUtils.createFrame(anim.width, anim.height, 'Background')];
+      anim.current = 0;
+      anim.engine.loadFrame(anim.frames[0]);
+      SFX.delete();
+      pushSnapshot();
+      renderFrameList();
+      renderLayerList();
+      renderInactiveWindowPreviews();
+      autoSave();
     });
   }
 
@@ -1145,6 +1819,7 @@
         anim.stop();
         btnPlay.textContent = '播放';
         SFX.stop();
+        renderInactiveWindowPreviews();
       } else {
         anim.play();
         btnPlay.textContent = '停止';
@@ -1191,15 +1866,29 @@
     document.getElementById('batchModal').addEventListener('click', function(e) {
       if (e.target === this) closeBatchModal();
     });
+
+    // 画布导出选择模态框
+    document.getElementById('canvasExportClose').addEventListener('click', function() { SFX.close(); closeCanvasExportModal(); });
+    document.getElementById('canvasExportCancelBtn').addEventListener('click', function() { SFX.close(); closeCanvasExportModal(); });
+    document.getElementById('canvasExportSelectAll').addEventListener('click', function() { SFX.click(); canvasExportSelectAll(true); });
+    document.getElementById('canvasExportDeselectAll').addEventListener('click', function() { SFX.click(); canvasExportSelectAll(false); });
+    document.getElementById('canvasExportConfirmBtn').addEventListener('click', function() { SFX.save(); canvasExportConfirm(); });
+    document.getElementById('canvasExportModal').addEventListener('click', function(e) {
+      if (e.target === this) closeCanvasExportModal();
+    });
   }
 
   // ---- 导出 PNG 选项 ----
   function showExportPngOptions() {
-    var userChoice = confirm('点击"确定"导出当前帧，点击"取消"进入批量导出选择。');
-    if (userChoice) {
-      exportPng();
+    if (canvasTabs.length > 1) {
+      showCanvasExportModal('png');
     } else {
-      openBatchModal();
+      var userChoice = confirm('点击"确定"导出当前帧，点击"取消"进入批量导出选择。');
+      if (userChoice) {
+        exportPng();
+      } else {
+        openBatchModal();
+      }
     }
   }
 
@@ -1313,6 +2002,247 @@
     }
     closeBatchModal();
     alert('已导出 ' + count + ' 张图片。');
+  }
+
+  // ---- 画布导出选择模态框 ----
+  var canvasExportSelected = new Set();
+  var canvasExportMode = 'png';
+
+  function showCanvasExportModal(mode) {
+    canvasExportMode = mode;
+    canvasExportSelected.clear();
+    saveCurrentTabState();
+    var modal = document.getElementById('canvasExportModal');
+    var title = document.getElementById('canvasExportTitle');
+    title.textContent = mode === 'gif' ? '选择要导出GIF的画布（可多选）' : '选择要导出PNG的画布（可多选）';
+    modal.style.display = 'flex';
+    SFX.open();
+    renderCanvasExportList();
+  }
+
+  function closeCanvasExportModal() {
+    document.getElementById('canvasExportModal').style.display = 'none';
+    canvasExportSelected.clear();
+  }
+
+  function renderCanvasExportList() {
+    var container = document.getElementById('canvasExportList');
+    container.innerHTML = '';
+
+    canvasTabs.forEach(function(tab, i) {
+      var card = document.createElement('div');
+      card.className = 'canvas-export-card';
+      if (canvasExportSelected.has(i)) card.classList.add('selected');
+
+      var frame = LayerUtils.getCompositePixels(tab.frames[tab.currentFrame || 0], tab.canvasW, tab.canvasH);
+      var thumbPs = Math.max(1, Math.ceil(80 / Math.max(tab.canvasW, tab.canvasH)));
+      var thumb = document.createElement('canvas');
+      thumb.width = tab.canvasW * thumbPs;
+      thumb.height = tab.canvasH * thumbPs;
+      var ctx = thumb.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, thumb.width, thumb.height);
+      for (var y = 0; y < tab.canvasH; y++) {
+        for (var x = 0; x < tab.canvasW; x++) {
+          var c = frame[y * tab.canvasW + x];
+          if (c) { ctx.fillStyle = c; ctx.fillRect(x * thumbPs, y * thumbPs, thumbPs, thumbPs); }
+        }
+      }
+      card.appendChild(thumb);
+
+      var check = document.createElement('div');
+      check.className = 'check-mark';
+      check.textContent = '\u2713';
+      card.appendChild(check);
+
+      var name = document.createElement('div');
+      name.className = 'card-name';
+      name.textContent = tab.name;
+      card.appendChild(name);
+
+      var info = document.createElement('div');
+      info.className = 'card-info';
+      info.textContent = tab.canvasW + '\u00d7' + tab.canvasH + ' | ' + tab.frames.length + ' \u5e27';
+      card.appendChild(info);
+
+      card.addEventListener('click', function() {
+        SFX.click();
+        if (canvasExportSelected.has(i)) {
+          canvasExportSelected.delete(i);
+          card.classList.remove('selected');
+        } else {
+          canvasExportSelected.add(i);
+          card.classList.add('selected');
+        }
+        updateCanvasExportCount();
+      });
+
+      container.appendChild(card);
+    });
+    updateCanvasExportCount();
+  }
+
+  function updateCanvasExportCount() {
+    var btn = document.getElementById('canvasExportConfirmBtn');
+    btn.textContent = '\u5bfc\u51fa\u9009\u4e2d (' + canvasExportSelected.size + ')';
+    btn.disabled = canvasExportSelected.size === 0;
+  }
+
+  function canvasExportSelectAll(select) {
+    for (var i = 0; i < canvasTabs.length; i++) {
+      if (select) canvasExportSelected.add(i);
+      else canvasExportSelected.delete(i);
+    }
+    renderCanvasExportList();
+  }
+
+  function canvasExportConfirm() {
+    if (canvasExportSelected.size === 0) return;
+    saveCurrentTabState();
+    var indices = Array.from(canvasExportSelected).sort(function(a, b) { return a - b; });
+    closeCanvasExportModal();
+
+    if (canvasExportMode === 'png') {
+      exportCanvasPngs(indices);
+    } else {
+      exportCanvasGifs(indices);
+    }
+  }
+
+  function exportCanvasPngs(indices) {
+    var count = 0;
+    for (var idx = 0; idx < indices.length; idx++) {
+      var tab = canvasTabs[indices[idx]];
+      var w = tab.canvasW, h = tab.canvasH;
+      var frame = LayerUtils.getCompositePixels(tab.frames[tab.currentFrame || 0], w, h);
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var c = frame[y * w + x];
+          if (c) { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); }
+        }
+      }
+      var a = document.createElement('a');
+      var safeName = tab.name.replace(/[<>:"/\\|?*]/g, '_');
+      a.href = canvas.toDataURL('image/png');
+      a.download = safeName + '.png';
+      a.click();
+      count++;
+    }
+    alert('已导出 ' + count + ' 张PNG图片。');
+    SFX.save();
+  }
+
+  async function exportCanvasGifs(indices) {
+    var scale = parseInt(document.getElementById('gifScale').value) || 1;
+    var progressBar = document.getElementById('gifProgress');
+    var gifBtn = document.getElementById('btnGif');
+    var gifBtnText = gifBtn.textContent;
+
+    try {
+      var workerRes = await fetch('lib/gif.js/gif.worker.js');
+      if (!workerRes.ok) throw new Error('Worker 脚本加载失败 (' + workerRes.status + ')');
+      var workerCode = await workerRes.text();
+      var workerBlob = new Blob([workerCode], { type: 'application/javascript' });
+      var workerUrl = URL.createObjectURL(workerBlob);
+
+      for (var tIdx = 0; tIdx < indices.length; tIdx++) {
+        var tab = canvasTabs[indices[tIdx]];
+        var w = tab.canvasW, h = tab.canvasH;
+        var outW = w * scale, outH = h * scale;
+        var frames = tab.frames.map(function(f) {
+          return LayerUtils.getCompositePixels(f, w, h);
+        });
+
+        gifBtn.textContent = '生成中 ' + (tIdx + 1) + '/' + indices.length + '...';
+        if (progressBar) {
+          progressBar.style.display = 'block';
+          progressBar.querySelector('.gif-progress-fill').style.width = '0%';
+          progressBar.querySelector('.gif-progress-text').textContent = '0%';
+        }
+
+        var gif = new GIF({
+          workers: 2,
+          quality: 10,
+          width: outW,
+          height: outH,
+          workerScript: workerUrl,
+          dither: false,
+        });
+
+        var frameDelay = Math.round(1000 / (tab.fps || 12));
+
+        frames.forEach(function(frame) {
+          var tmp = document.createElement('canvas');
+          tmp.width = w;
+          tmp.height = h;
+          var ctx = tmp.getContext('2d');
+          var imgData = ctx.createImageData(w, h);
+          var buf = imgData.data;
+          for (var y = 0; y < h; y++) {
+            for (var x = 0; x < w; x++) {
+              var c = frame[y * w + x];
+              var idx = (y * w + x) * 4;
+              if (c) {
+                buf[idx] = parseInt(c.slice(1, 3), 16);
+                buf[idx + 1] = parseInt(c.slice(3, 5), 16);
+                buf[idx + 2] = parseInt(c.slice(5, 7), 16);
+                buf[idx + 3] = 255;
+              } else {
+                buf[idx] = 255; buf[idx + 1] = 255; buf[idx + 2] = 255; buf[idx + 3] = 255;
+              }
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+          if (scale > 1) {
+            var scaled = document.createElement('canvas');
+            scaled.width = outW;
+            scaled.height = outH;
+            var sctx = scaled.getContext('2d');
+            sctx.imageSmoothingEnabled = false;
+            sctx.drawImage(tmp, 0, 0, outW, outH);
+            gif.addFrame(scaled, { delay: frameDelay, copy: true });
+          } else {
+            gif.addFrame(tmp, { delay: frameDelay, copy: true });
+          }
+        });
+
+        await new Promise(function(resolve) {
+          gif.on('progress', function(p) {
+            var pct = Math.round(p * 100);
+            if (progressBar) {
+              progressBar.querySelector('.gif-progress-fill').style.width = pct + '%';
+              progressBar.querySelector('.gif-progress-text').textContent = pct + '%';
+            }
+            gifBtn.textContent = '生成中 ' + (tIdx + 1) + '/' + indices.length + ' (' + pct + '%)';
+          });
+          gif.on('finished', function(blob) {
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            var safeName = tab.name.replace(/[<>:"/\\|?*]/g, '_');
+            a.download = safeName + '.gif';
+            a.click();
+            URL.revokeObjectURL(a.href);
+            resolve();
+          });
+          gif.render();
+        });
+      }
+
+      URL.revokeObjectURL(workerUrl);
+      if (window.SFX) SFX.save();
+      if (progressBar) { setTimeout(function() { progressBar.style.display = 'none'; }, 1000); }
+      gifBtn.textContent = gifBtnText;
+      alert('已导出 ' + indices.length + ' 个GIF动画。');
+    } catch (err) {
+      console.error('GIF 导出错误:', err);
+      gifBtn.textContent = gifBtnText;
+      if (progressBar) progressBar.style.display = 'none';
+      alert('GIF 导出失败: ' + err.message);
+    }
   }
 
   // ---- 照片转像素 ----
@@ -1435,6 +2365,7 @@
     renderLayerList();
     // 保存快照
     pushSnapshot();
+    renderInactiveWindowPreviews();
 
     if (hint) {
       var msg = framesData.length + ' 张图片已转为' + (framesData.length > 1 ? '帧序列' : '像素');
@@ -1665,9 +2596,9 @@
         cleanup();
         return;
       }
-      if (duration > 15) {
-        if (hint) hint.textContent = '视频时长 ' + duration.toFixed(1) + 's，超过 15 秒限制';
-        alert('视频时长不能超过 15 秒！\n当前时长: ' + duration.toFixed(1) + ' 秒');
+      if (duration > 60) {
+        if (hint) hint.textContent = '视频时长 ' + duration.toFixed(1) + 's，超过 60 秒限制';
+        alert('视频时长不能超过 60 秒！\n当前时长: ' + duration.toFixed(1) + ' 秒');
         cleanup();
         return;
       }
@@ -1829,6 +2760,7 @@
     renderFrameList();
     renderLayerList();
     pushSnapshot();
+    renderInactiveWindowPreviews();
 
     // 隐藏进度条
     if (progressBar) {
@@ -1852,6 +2784,57 @@
 
     autoSave();
     if (cleanup) cleanup();
+  }
+
+  function bindResizers() {
+    var sidebarLeft = document.querySelector('.sidebar-left');
+    var sidebarRight = document.querySelector('.sidebar-right');
+    var resizerLeft = document.getElementById('resizerLeft');
+    var resizerRight = document.getElementById('resizerRight');
+
+    function makeDraggable(resizer, sidebar, side) {
+      var startX, startWidth;
+      var dragging = false;
+
+      function onMouseDown(e) {
+        dragging = true;
+        startX = e.clientX;
+        startWidth = sidebar.offsetWidth;
+        resizer.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        e.preventDefault();
+      }
+
+      function onMouseMove(e) {
+        if (!dragging) return;
+        var dx = e.clientX - startX;
+        var newWidth;
+        if (side === 'left') {
+          newWidth = startWidth + dx;
+        } else {
+          newWidth = startWidth - dx;
+        }
+        newWidth = Math.max(120, Math.min(500, newWidth));
+        sidebar.style.width = newWidth + 'px';
+      }
+
+      function onMouseUp() {
+        dragging = false;
+        resizer.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      }
+
+      resizer.addEventListener('mousedown', onMouseDown);
+    }
+
+    makeDraggable(resizerLeft, sidebarLeft, 'left');
+    makeDraggable(resizerRight, sidebarRight, 'right');
   }
 
   function bindCanvasSize() {
@@ -1891,7 +2874,10 @@
     if (dims.w === canvasW && dims.h === canvasH) return;
 
     anim.syncCurrentFrame();
-    var hasContent = anim.frames.some(function(f) { return f.some(function(c) { return c !== null; }); });
+    var hasContent = anim.frames.some(function(f) {
+      var composite = LayerUtils.getCompositePixels(f, canvasW, canvasH);
+      return composite.some(function(c) { return c !== null; });
+    });
     if (hasContent && !confirm('调整画布尺寸将缩放现有内容（最近邻），确认继续？')) return;
 
     if (anim.playing) {
@@ -1902,8 +2888,10 @@
     var newPixelSize = computePixelSize(dims.w, dims.h);
     basePixelSize = newPixelSize;
     zoomLevel = 1.0;
+    centerCanvas();
     engine.resize(dims.w, dims.h, newPixelSize);
     anim.resize(dims.w, dims.h);
+    setWrapSize();
 
     canvasW = dims.w;
     canvasH = dims.h;
@@ -1917,24 +2905,329 @@
     // 调整尺寸后保存快照
     pushSnapshot();
     autoSave();
+    // 更新当前标签的元数据
+    if (canvasTabs.length > 0 && activeTabIndex < canvasTabs.length) {
+      canvasTabs[activeTabIndex].canvasW = canvasW;
+      canvasTabs[activeTabIndex].canvasH = canvasH;
+      canvasTabs[activeTabIndex].resolution = res;
+      canvasTabs[activeTabIndex].ratio = ratio;
+      canvasTabs[activeTabIndex].basePixelSize = basePixelSize;
+      canvasTabs[activeTabIndex].zoomLevel = zoomLevel;
+      // 更新窗口标题和大小
+      var tab = canvasTabs[activeTabIndex];
+      if (typeof WindowManager !== 'undefined' && tab._winId) {
+        WindowManager.updateWindowSize(tab._winId, canvasW, canvasH);
+        WindowManager.updateWindowZoom(tab._winId, Math.round(zoomLevel * 100));
+      }
+    }
+    updateCanvasPosition();
+    setWrapSize();
+    renderInactiveWindowPreviews();
   }
 
   function bindZoom() {
     document.getElementById('btnZoomIn').addEventListener('click', function() { SFX.zoomIn(); setZoom(zoomLevel * 1.5); });
     document.getElementById('btnZoomOut').addEventListener('click', function() { SFX.zoomOut(); setZoom(zoomLevel / 1.5); });
-    document.getElementById('btnZoomFit').addEventListener('click', function() { SFX.click(); setZoom(1.0); });
   }
 
   function setZoom(z) {
     zoomLevel = Math.max(0.25, Math.min(6, z));
     var ps = Math.max(2, Math.min(48, Math.round(basePixelSize * zoomLevel)));
     engine.setPixelSize(ps);
+    setWrapSize();
     updateZoomLabel();
+    // 更新窗口状态栏
+    var tab = canvasTabs[activeTabIndex];
+    if (typeof WindowManager !== 'undefined' && tab && tab._winId) {
+      WindowManager.updateWindowZoom(tab._winId, Math.round(zoomLevel * 100));
+    }
   }
 
   function updateZoomLabel() {
     var el = document.getElementById('zoomLevel');
     if (el) el.textContent = Math.round(zoomLevel * 100) + '%';
+  }
+
+  // ---- 画布拖拽手柄 ----
+  function bindCanvasDrag() {
+    var handle = document.getElementById('canvasDragHandle');
+    if (!handle) return;
+    var isDragging = false;
+    var startX, startY, startPanX, startPanY;
+
+    handle.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startPanX = panX;
+      startPanY = panY;
+      handle.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+      panX = startPanX + (e.clientX - startX);
+      panY = startPanY + (e.clientY - startY);
+      updateCanvasPosition();
+    });
+
+    document.addEventListener('mouseup', function() {
+      if (isDragging) {
+        isDragging = false;
+        handle.style.cursor = 'grab';
+      }
+    });
+
+    // 触摸支持
+    handle.addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var t = e.touches[0];
+      isDragging = true;
+      startX = t.clientX;
+      startY = t.clientY;
+      startPanX = panX;
+      startPanY = panY;
+    });
+
+    document.addEventListener('touchmove', function(e) {
+      if (!isDragging || e.touches.length !== 1) return;
+      var t = e.touches[0];
+      panX = startPanX + (t.clientX - startX);
+      panY = startPanY + (t.clientY - startY);
+      updateCanvasPosition();
+    });
+
+    document.addEventListener('touchend', function() {
+      isDragging = false;
+    });
+  }
+
+  // ---- 窗体边缘缩放 ----
+  function bindCanvasResize() {
+    var wrap = document.getElementById('canvasWrap');
+    if (!wrap) return;
+    var handles = wrap.querySelectorAll('.resize-handle');
+    if (!handles.length) return;
+
+    var PAD = 16; // canvas-wrap padding per side
+    var BORDER = 1; // canvas-wrap border per side (frutiger-metro.css)
+    var MIN_W = 80;
+    var MIN_H = 80;
+
+    var resizing = false;
+    var dir = '';
+    var startX = 0, startY = 0;
+    var startW = 0, startH = 0;
+    var startPanX = 0, startPanY = 0;
+
+    function getViewportRect() {
+      var vp = getViewportEl();
+      return vp ? vp.getBoundingClientRect() : { width: 9999, height: 9999 };
+    }
+
+    function fitCanvasToWrap() {
+      // 根据当前 wrap 尺寸重新计算 pixelSize 使画布恰好填满
+      // In border-box: offsetWidth = content + padding + border
+      // So content area = offsetWidth - PAD*2 - BORDER*2
+      var w = wrap.offsetWidth - PAD * 2 - BORDER * 2;
+      var h = wrap.offsetHeight - PAD * 2 - BORDER * 2;
+      if (w < 10 || h < 10) return;
+      var ps = Math.floor(Math.min(w / canvasW, h / canvasH));
+      ps = Math.max(2, Math.min(48, ps));
+      basePixelSize = ps;
+      zoomLevel = 1.0;
+      engine.setPixelSize(ps);
+      updateZoomLabel();
+      if (canvasTabs[activeTabIndex]) {
+        canvasTabs[activeTabIndex].basePixelSize = basePixelSize;
+        canvasTabs[activeTabIndex].zoomLevel = zoomLevel;
+      }
+    }
+
+    handles.forEach(function(h) {
+      h.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        resizing = true;
+        dir = h.getAttribute('data-dir');
+        startX = e.clientX;
+        startY = e.clientY;
+        startW = wrap.offsetWidth;
+        startH = wrap.offsetHeight;
+        startPanX = panX;
+        startPanY = panY;
+        wrap.style.width = startW + 'px';
+        wrap.style.height = startH + 'px';
+      });
+    });
+
+    document.addEventListener('mousemove', function(e) {
+      if (!resizing) return;
+      var dx = e.clientX - startX;
+      var dy = e.clientY - startY;
+      var newW = startW, newH = startH;
+      var newPanX = startPanX, newPanY = startPanY;
+
+      if (dir.indexOf('e') !== -1) newW = startW + dx;
+      if (dir.indexOf('s') !== -1) newH = startH + dy;
+      if (dir.indexOf('w') !== -1) {
+        newW = startW - dx;
+        newPanX = startPanX + dx;
+      }
+      if (dir.indexOf('n') !== -1) {
+        newH = startH - dy;
+        newPanY = startPanY + dy;
+      }
+
+      // 限制最小尺寸
+      if (newW < MIN_W) {
+        if (dir.indexOf('w') !== -1) newPanX = startPanX + (startW - MIN_W);
+        newW = MIN_W;
+      }
+      if (newH < MIN_H) {
+        if (dir.indexOf('n') !== -1) newPanY = startPanY + (startH - MIN_H);
+        newH = MIN_H;
+      }
+
+      wrap.style.width = newW + 'px';
+      wrap.style.height = newH + 'px';
+      panX = newPanX;
+      panY = newPanY;
+      updateCanvasPosition();
+      fitCanvasToWrap();
+    });
+
+    document.addEventListener('mouseup', function() {
+      if (resizing) {
+        resizing = false;
+        if (canvasTabs[activeTabIndex]) {
+          canvasTabs[activeTabIndex].panX = panX;
+          canvasTabs[activeTabIndex].panY = panY;
+        }
+      }
+    });
+
+    // 触摸支持
+    handles.forEach(function(h) {
+      h.addEventListener('touchstart', function(e) {
+        if (e.touches.length !== 1) return;
+        e.preventDefault();
+        e.stopPropagation();
+        resizing = true;
+        dir = h.getAttribute('data-dir');
+        var t = e.touches[0];
+        startX = t.clientX;
+        startY = t.clientY;
+        startW = wrap.offsetWidth;
+        startH = wrap.offsetHeight;
+        startPanX = panX;
+        startPanY = panY;
+        wrap.style.width = startW + 'px';
+        wrap.style.height = startH + 'px';
+      });
+    });
+
+    document.addEventListener('touchmove', function(e) {
+      if (!resizing || e.touches.length !== 1) return;
+      e.preventDefault();
+      var t = e.touches[0];
+      var dx = t.clientX - startX;
+      var dy = t.clientY - startY;
+      var newW = startW, newH = startH;
+      var newPanX = startPanX, newPanY = startPanY;
+
+      if (dir.indexOf('e') !== -1) newW = startW + dx;
+      if (dir.indexOf('s') !== -1) newH = startH + dy;
+      if (dir.indexOf('w') !== -1) {
+        newW = startW - dx;
+        newPanX = startPanX + dx;
+      }
+      if (dir.indexOf('n') !== -1) {
+        newH = startH - dy;
+        newPanY = startPanY + dy;
+      }
+
+      if (newW < MIN_W) {
+        if (dir.indexOf('w') !== -1) newPanX = startPanX + (startW - MIN_W);
+        newW = MIN_W;
+      }
+      if (newH < MIN_H) {
+        if (dir.indexOf('n') !== -1) newPanY = startPanY + (startH - MIN_H);
+        newH = MIN_H;
+      }
+
+      wrap.style.width = newW + 'px';
+      wrap.style.height = newH + 'px';
+      panX = newPanX;
+      panY = newPanY;
+      updateCanvasPosition();
+      fitCanvasToWrap();
+    }, { passive: false });
+
+    document.addEventListener('touchend', function() {
+      if (resizing) {
+        resizing = false;
+        if (canvasTabs[activeTabIndex]) {
+          canvasTabs[activeTabIndex].panX = panX;
+          canvasTabs[activeTabIndex].panY = panY;
+        }
+      }
+    });
+  }
+
+  // ---- 鼠标滚轮缩放 ----
+  function bindWheelZoom() {
+    var canvasWrap = document.getElementById('canvasWrap');
+    if (!canvasWrap) return;
+    canvasWrap.addEventListener('wheel', function(e) {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        if (e.deltaY < 0) {
+          setZoom(zoomLevel * 1.2);
+        } else {
+          setZoom(zoomLevel / 1.2);
+        }
+      }
+    }, { passive: false });
+  }
+
+  // ---- 橡皮擦液态玻璃范围指示器 ----
+  function bindEraserCursor() {
+    var canvas = document.getElementById('drawCanvas');
+    var canvasWrap = document.getElementById('canvasWrap');
+    var cursor = document.getElementById('eraserCursor');
+    if (!canvas || !canvasWrap || !cursor) return;
+
+    function updateCursor(e) {
+      if (engine.tool !== 'eraser') {
+        cursor.style.display = 'none';
+        canvas.style.cursor = '';
+        return;
+      }
+      var canvasRect = canvas.getBoundingClientRect();
+      if (e.clientX < canvasRect.left || e.clientX > canvasRect.right ||
+          e.clientY < canvasRect.top || e.clientY > canvasRect.bottom) {
+        cursor.style.display = 'none';
+        canvas.style.cursor = '';
+        return;
+      }
+      canvas.style.cursor = 'none';
+      var wrapRect = canvasWrap.getBoundingClientRect();
+      var x = e.clientX - wrapRect.left;
+      var y = e.clientY - wrapRect.top;
+      var size = engine.eraserSize * engine.pixelSize;
+      cursor.style.display = 'block';
+      cursor.style.left = x + 'px';
+      cursor.style.top = y + 'px';
+      cursor.style.width = size + 'px';
+      cursor.style.height = size + 'px';
+    }
+
+    document.addEventListener('mousemove', updateCursor);
   }
 
   // ---- 图层面板 ----
@@ -1952,12 +3245,14 @@
       SFX.add();
       engine.addLayer();
       pushSnapshot();
+      renderInactiveWindowPreviews();
       autoSave();
     });
     if (btnDup) btnDup.addEventListener('click', function() {
       SFX.add();
       engine.duplicateLayer();
       pushSnapshot();
+      renderInactiveWindowPreviews();
       autoSave();
     });
     if (btnDel) btnDel.addEventListener('click', function() {
@@ -1969,18 +3264,21 @@
       SFX.delete();
       engine.deleteLayer();
       pushSnapshot();
+      renderInactiveWindowPreviews();
       autoSave();
     });
     if (btnUp) btnUp.addEventListener('click', function() {
       SFX.click();
       engine.moveLayerUp();
       pushSnapshot();
+      renderInactiveWindowPreviews();
       autoSave();
     });
     if (btnDown) btnDown.addEventListener('click', function() {
       SFX.click();
       engine.moveLayerDown();
       pushSnapshot();
+      renderInactiveWindowPreviews();
       autoSave();
     });
     if (btnMerge) btnMerge.addEventListener('click', function() {
@@ -1992,6 +3290,7 @@
       SFX.confirm();
       engine.mergeLayerDown();
       pushSnapshot();
+      renderInactiveWindowPreviews();
       autoSave();
     });
 
@@ -2004,6 +3303,7 @@
         throttledSfx(function() { SFX.click(); });
       });
       opacitySlider.addEventListener('change', function() {
+        renderInactiveWindowPreviews();
         autoSave();
       });
     }
@@ -2038,6 +3338,7 @@
           e.stopPropagation();
           SFX.toggle();
           engine.setLayerVisible(idx, !layerInfo.visible);
+          renderInactiveWindowPreviews();
         });
         item.appendChild(visBtn);
 
@@ -2111,6 +3412,7 @@
           if (fromIdx !== toIdx && !isNaN(fromIdx) && !isNaN(toIdx)) {
             engine.moveLayerTo(fromIdx, toIdx);
             pushSnapshot();
+            renderInactiveWindowPreviews();
             autoSave();
           }
         });
@@ -2164,6 +3466,7 @@
       var newPixelSize = computePixelSize(rect.w, rect.h);
       basePixelSize = newPixelSize;
       zoomLevel = 1.0;
+      centerCanvas();
       engine.applyCrop(rect.x1, rect.y1, rect.x2, rect.y2, newPixelSize);
       anim.crop(rect.x1, rect.y1, rect.x2, rect.y2);
 
@@ -2178,6 +3481,7 @@
     renderLayerList();
     // 裁剪后保存快照
     pushSnapshot();
+    renderInactiveWindowPreviews();
       exitCropMode();
     });
 
@@ -2212,6 +3516,10 @@
   }
 
   async function exportGif() {
+    if (canvasTabs.length > 1) {
+      showCanvasExportModal('gif');
+      return;
+    }
     var frames = anim.getAllFrames();
     if (frames.length < 1) { alert('没有可导出的帧'); return; }
 
@@ -2349,15 +3657,20 @@
     btn.textContent = '上传中...';
     btn.disabled = true;
 
+    saveCurrentTabState();
+    var firstTab = canvasTabs[0] || {};
     var workData = {
       title: title,
       author: author,
-      width: engine.width,
-      height: engine.height,
-      frameCount: anim.frames.length,
-      fps: anim.fps,
-      frames: anim.getAllFrames(),
-      thumbnail: anim.getThumbnail(),
+      width: firstTab.canvasW || engine.width,
+      height: firstTab.canvasH || engine.height,
+      frameCount: (firstTab.frames || anim.frames).length,
+      fps: firstTab.fps || anim.fps,
+      frames: (firstTab.frames || []).map(function(f) {
+        return LayerUtils.getCompositePixels(f, firstTab.canvasW, firstTab.canvasH);
+      }),
+      thumbnail: canvasTabs.length > 0 ? getCanvasThumbnail(firstTab) : '',
+      canvasCount: canvasTabs.length,
       created_at: new Date().toLocaleString('zh-CN'),
     };
 
@@ -2385,21 +3698,46 @@
   }
 
   function saveToLocalFile() {
-    anim.syncCurrentFrame();
+    saveCurrentTabState();
     var title = document.getElementById('workTitle').value.trim() || '未命名作品';
     var author = document.getElementById('workAuthor').value.trim() || '匿名';
 
+    var canvasesData = canvasTabs.map(function(tab) {
+      var layerFrames = tab.frames.map(function(f) {
+        var frame = LayerUtils.cloneFrame(f);
+        normalizeFrame(frame);
+        return frame;
+      });
+      var compositeFrames = layerFrames.map(function(f) {
+        return LayerUtils.getCompositePixels(f, tab.canvasW, tab.canvasH);
+      });
+      return {
+        name: tab.name,
+        width: tab.canvasW,
+        height: tab.canvasH,
+        resolution: tab.resolution,
+        ratio: tab.ratio,
+        fps: tab.fps,
+        frames: compositeFrames,
+        layerFrames: layerFrames,
+        currentFrame: tab.currentFrame,
+      };
+    });
+
+    var first = canvasesData[0] || {};
     var project = {
       format: 'pixelforge-project',
-      version: 2,
+      version: 3,
       title: title,
       author: author,
-      width: engine.width,
-      height: engine.height,
-      fps: anim.fps,
-      frames: anim.getAllFrames(),
-      layerFrames: anim.getAllLayerFrames(),
-      thumbnail: anim.getThumbnail(),
+      canvases: canvasesData,
+      // Backward compat
+      width: first.width || 128,
+      height: first.height || 128,
+      fps: first.fps || 12,
+      frames: first.frames || [],
+      layerFrames: first.layerFrames || [],
+      thumbnail: canvasTabs.length > 0 ? getCanvasThumbnail(canvasTabs[0]) : '',
       savedAt: new Date().toISOString(),
     };
 
@@ -2423,61 +3761,112 @@
           alert('文件格式不正确，请选择 .pixa 项目文件');
           return;
         }
-        if (!project.frames || !project.width || !project.height) {
-          alert('项目文件已损坏或缺少必要数据');
-          return;
-        }
 
         if (anim.playing) {
           anim.stop();
           document.getElementById('btnPlay').textContent = '播放';
         }
 
-        var newW = project.width;
-        var newH = project.height;
-        var newPixelSize = computePixelSize(newW, newH);
-
-        engine.resize(newW, newH, newPixelSize);
-        anim.resize(newW, newH);
-
-        // 优先使用图层帧数据，回退到旧版扁平数组
-        if (project.layerFrames && project.layerFrames.length > 0) {
-          anim.frames = project.layerFrames.map(function(f) {
-            var frame = LayerUtils.cloneFrame(f);
-            normalizeFrame(frame);
-            return frame;
-          });
-        } else {
-          anim.frames = project.frames.map(function(f) {
-            var frame = LayerUtils.convertLegacyFrame(f, newW, newH);
-            normalizeFrame(frame);
-            return frame;
-          });
-        }
-        anim.current = 0;
-        anim.fps = project.fps || 12;
-
-        canvasW = newW;
-        canvasH = newH;
         document.getElementById('workTitle').value = project.title || '';
         document.getElementById('workAuthor').value = project.author || '';
-        document.getElementById('fpsSlider').value = anim.fps;
-        document.getElementById('fpsLabel').textContent = anim.fps + ' FPS';
 
-        syncSizeSelectors(newW, newH);
+        if (project.canvases && project.canvases.length > 0) {
+          // Multi-canvas project file
+          canvasTabs = project.canvases.map(function(c, idx) {
+            var frames;
+            if (c.layerFrames && c.layerFrames.length > 0) {
+              frames = c.layerFrames.map(function(f) {
+                var frame = LayerUtils.cloneFrame(f);
+                normalizeFrame(frame);
+                return frame;
+              });
+            } else {
+              frames = (c.frames || []).map(function(f) {
+                var frame = LayerUtils.convertLegacyFrame(f, c.width, c.height);
+                normalizeFrame(frame);
+                return frame;
+              });
+            }
+            if (frames.length === 0) {
+              frames = [LayerUtils.createFrame(c.width, c.height, 'Background')];
+            }
+            return {
+              id: Date.now() + Math.random() + idx,
+              name: c.name || ('画布 ' + (idx + 1)),
+              canvasW: c.width,
+              canvasH: c.height,
+              resolution: c.resolution || 128,
+              ratio: c.ratio || '1:1',
+              zoomLevel: 1.0,
+              basePixelSize: computePixelSize(c.width, c.height),
+              panX: 0,
+              panY: 0,
+              frames: frames,
+              currentFrame: c.currentFrame || 0,
+              fps: c.fps || 12,
+              undoStack: [],
+              redoStack: [],
+              _winId: null,
+            };
+          });
+        } else {
+          // Legacy single-canvas project file
+          if (!project.frames || !project.width || !project.height) {
+            alert('项目文件已损坏或缺少必要数据');
+            return;
+          }
+          var newW = project.width, newH = project.height;
+          var frames;
+          if (project.layerFrames && project.layerFrames.length > 0) {
+            frames = project.layerFrames.map(function(f) {
+              var frame = LayerUtils.cloneFrame(f);
+              normalizeFrame(frame);
+              return frame;
+            });
+          } else {
+            frames = project.frames.map(function(f) {
+              var frame = LayerUtils.convertLegacyFrame(f, newW, newH);
+              normalizeFrame(frame);
+              return frame;
+            });
+          }
+          canvasTabs = [{
+            id: Date.now() + Math.random(),
+            name: '画布 1',
+            canvasW: newW,
+            canvasH: newH,
+            resolution: 128,
+            ratio: '1:1',
+            zoomLevel: 1.0,
+            basePixelSize: computePixelSize(newW, newH),
+            panX: 0,
+            panY: 0,
+            frames: frames,
+            currentFrame: 0,
+            fps: project.fps || 12,
+            undoStack: [],
+            redoStack: [],
+            _winId: null,
+          }];
+        }
 
-        engine.loadFrame(anim.frames[0]);
-        anim._renderOnion();
-
-        updateSizeDisplay();
-        renderFrameList();
-        renderLayerList();
-        // 加载后清空历史
+        activeTabIndex = 0;
+        loadTabState(0);
         undoStack = [];
         redoStack = [];
         pushSnapshot();
+
+        // 重建窗口
+        if (typeof WindowManager !== 'undefined') {
+          WindowManager.rebuildAllWindows(canvasTabs, activeTabIndex);
+          // rebuildAllWindows 会 activateWindow(activeTabIndex)，使 .win-active-area 可见
+          // 然后才移动 canvasWrap 到活动窗口
+          moveCanvasToActiveWindow(activeTabIndex);
+          renderInactiveWindowPreviews();
+        }
+
         SFX.confirm();
-        alert('项目加载成功: ' + (project.title || '未命名'));
+        alert('项目加载成功: ' + (project.title || '未命名') + '\n共 ' + canvasTabs.length + ' 个画布');
       } catch (err) {
         alert('加载失败: ' + err.message);
       }

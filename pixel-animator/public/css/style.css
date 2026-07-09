@@ -74,12 +74,8 @@ img, canvas {
   justify-content: center;
   background: var(--bg-deep);
   background-image:
-    linear-gradient(rgba(13,14,26,0.55), rgba(13,14,26,0.55)),
-    url("../img/微信图片_20260709152152_2_3.jpg");
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
+    repeating-linear-gradient(0deg, transparent 0, transparent 31px, rgba(86,108,134,0.08) 31px, rgba(86,108,134,0.08) 32px),
+    repeating-linear-gradient(90deg, transparent 0, transparent 31px, rgba(86,108,134,0.08) 31px, rgba(86,108,134,0.08) 32px);
   padding: 20px;
   overflow: hidden;
   position: relative;
@@ -258,58 +254,6 @@ img, canvas {
 }
 .auth-footer a { color: var(--accent); text-decoration: none; }
 .auth-footer a:hover { color: var(--accent-hi); text-decoration: underline; }
-
-/* 更换背景按钮 */
-.bg-changer {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
-}
-.bg-changer-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  background: rgba(26,26,46,0.75);
-  backdrop-filter: blur(8px);
-  border: 2px solid var(--border);
-  color: var(--text-muted);
-  font-size: 12px;
-  font-family: var(--font-body);
-  cursor: pointer;
-  border-radius: 0;
-  transition: none;
-}
-.bg-changer-btn:hover {
-  background: rgba(26,26,46,0.9);
-  color: var(--text);
-  border-color: var(--primary);
-}
-.bg-changer-btn svg { flex-shrink: 0; }
-.bg-reset-btn {
-  display: none;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: rgba(248,113,113,0.15);
-  backdrop-filter: blur(8px);
-  border: 2px solid rgba(248,113,113,0.4);
-  color: var(--danger);
-  font-size: 11px;
-  font-family: var(--font-body);
-  cursor: pointer;
-  border-radius: 0;
-}
-.bg-reset-btn:hover {
-  background: rgba(248,113,113,0.25);
-  border-color: var(--danger);
-}
-.bg-reset-btn.show { display: flex; }
 
 /* ==================== 编辑器主体 ==================== */
 body.editor {
@@ -1163,7 +1107,6 @@ body.editor {
 }
 .zoom-btn:hover { border-color: var(--primary); color: var(--primary); }
 .zoom-btn:active { box-shadow: var(--bevel-in); transform: translate(1px,1px); }
-#btnZoomFit { width: auto; height: 26px; padding: 0 6px; font-size: 13px; font-family: var(--font-pixel); white-space: nowrap; letter-spacing: 1px; line-height: 1; }
 #zoomLevel { min-width: 38px; text-align: center; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-muted); font-family: var(--font-body); }
 #drawCanvas {
   display: block;

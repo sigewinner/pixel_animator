@@ -26,10 +26,14 @@ class CanvasEngine {
     // 图层回调（图层数量/顺序变化时触发）
     this.onLayersChange = null;
 
+    // 画布拖动回调
+    this.onPanMove = null;
+
     this.tool = 'pencil';
     this.color = '#000000';
     this.penSize = 1;        // 钢笔大小
     this.eraserSize = 3;     // 橡皮擦大小
+    this.shapeType = 'circle'; // 当前图形类型
     this.isDrawing = false;
     this.showGrid = true;
 
@@ -106,6 +110,10 @@ class CanvasEngine {
 
   setTool(tool) {
     this.tool = tool;
+  }
+
+  setShapeType(type) {
+    this.shapeType = type;
   }
 
   setColor(color) {
@@ -248,6 +256,16 @@ class CanvasEngine {
   _bindEvents() {
     const onDown = (e) => {
       e.preventDefault();
+
+      // 拖动画布工具：通过回调移动画布
+      if (this.tool === 'pan') {
+        this.isPanning = true;
+        this.panLastX = e.clientX;
+        this.panLastY = e.clientY;
+        this.canvas.classList.add('dragging');
+        return;
+      }
+
       const { x, y } = this._getPixelCoord(e);
 
       // 裁剪工具：开始选区
@@ -276,7 +294,7 @@ class CanvasEngine {
 
       this.isDrawing = true;
       this.pushHistory();
-      if (this.tool === 'line' || this.tool === 'circle') {
+      if (this.tool === 'line' || this.tool === 'shape') {
         // 预览工具：记录起点和快照，拖拽时实时预览
         this.previewStart = { x, y };
         this.previewSnapshot = this.pixels.slice();
@@ -285,6 +303,15 @@ class CanvasEngine {
       }
     };
     const onMove = (e) => {
+      // 拖动画布
+      if (this.isPanning) {
+        var dx = e.clientX - this.panLastX;
+        var dy = e.clientY - this.panLastY;
+        this.panLastX = e.clientX;
+        this.panLastY = e.clientY;
+        if (this.onPanMove) this.onPanMove(dx, dy);
+        return;
+      }
       if (!this.isDrawing) return;
       const { x, y } = this._getPixelCoord(e);
 
@@ -299,16 +326,21 @@ class CanvasEngine {
         this.pixels = this.previewSnapshot.slice();
         this._drawLinePixels(this.previewStart.x, this.previewStart.y, x, y, this.color);
         this.render();
-      } else if (this.tool === 'circle') {
+      } else if (this.tool === 'shape') {
         this.pixels = this.previewSnapshot.slice();
-        const r = Math.round(Math.hypot(x - this.previewStart.x, y - this.previewStart.y));
-        this._drawCirclePixels(this.previewStart.x, this.previewStart.y, r, this.color);
+        this._drawShape(this.shapeType, this.previewStart.x, this.previewStart.y, x, y, this.color);
         this.render();
       } else {
         this._applyTool(x, y);
       }
     };
     const onUp = () => {
+      // 拖动画布结束
+      if (this.isPanning) {
+        this.isPanning = false;
+        this.canvas.classList.remove('dragging');
+        return;
+      }
       // 裁剪工具：完成选区
       if (this.tool === 'crop' && this.isDrawing) {
         this.isDrawing = false;
@@ -425,6 +457,139 @@ class CanvasEngine {
       y++;
       if (err <= 0) { err += 2 * y + 1; }
       if (err > 0) { x--; err -= 2 * x + 1; }
+    }
+  }
+
+  /** 图形绘制分发器 */
+  _drawShape(type, x0, y0, x1, y1, color) {
+    switch (type) {
+      case 'circle': {
+        const r = Math.round(Math.hypot(x1 - x0, y1 - y0));
+        this._drawCirclePixels(x0, y0, r, color);
+        break;
+      }
+      case 'ellipse': {
+        const rx = Math.abs(x1 - x0);
+        const ry = Math.abs(y1 - y0);
+        this._drawEllipsePixels(x0, y0, rx, ry, color);
+        break;
+      }
+      case 'rect': {
+        const minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
+        const minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
+        this._drawRectPixels(minX, minY, maxX, maxY, color);
+        break;
+      }
+      case 'triangle': {
+        const dy = y1 - y0;
+        const dx = x1 - x0;
+        const halfW = Math.abs(dx);
+        const top = { x: x0, y: y0 };
+        const bl = { x: x0 - halfW, y: y0 + dy };
+        const br = { x: x0 + halfW, y: y0 + dy };
+        this._drawLinePixels(top.x, top.y, bl.x, bl.y, color);
+        this._drawLinePixels(bl.x, bl.y, br.x, br.y, color);
+        this._drawLinePixels(br.x, br.y, top.x, top.y, color);
+        break;
+      }
+      case 'star': {
+        const r = Math.round(Math.hypot(x1 - x0, y1 - y0));
+        this._drawStarPixels(x0, y0, r, color);
+        break;
+      }
+      case 'diamond': {
+        const halfW = Math.abs(x1 - x0);
+        const halfH = Math.abs(y1 - y0);
+        this._drawLinePixels(x0, y0 - halfH, x0 + halfW, y0, color);
+        this._drawLinePixels(x0 + halfW, y0, x0, y0 + halfH, color);
+        this._drawLinePixels(x0, y0 + halfH, x0 - halfW, y0, color);
+        this._drawLinePixels(x0 - halfW, y0, x0, y0 - halfH, color);
+        break;
+      }
+      case 'heart': {
+        const size = Math.round(Math.hypot(x1 - x0, y1 - y0));
+        this._drawHeartPixels(x0, y0, size, color);
+        break;
+      }
+    }
+  }
+
+  /** 中点画椭圆算法（描边） */
+  _drawEllipsePixels(cx, cy, rx, ry, color) {
+    if (rx === 0 && ry === 0) { this._setPixel(cx, cy, color); return; }
+    if (rx === 0) { this._drawLinePixels(cx, cy - ry, cx, cy + ry, color); return; }
+    if (ry === 0) { this._drawLinePixels(cx - rx, cy, cx + rx, cy, color); return; }
+    rx = Math.max(1, rx);
+    ry = Math.max(1, ry);
+    let x = 0, y = ry;
+    const rx2 = rx * rx, ry2 = ry * ry;
+    let dx = 2 * ry2 * x, dy = 2 * rx2 * y;
+    // 区域1
+    let p1 = ry2 - rx2 * ry + 0.25 * rx2;
+    while (dx < dy) {
+      this._setPixel(cx + x, cy + y, color);
+      this._setPixel(cx - x, cy + y, color);
+      this._setPixel(cx + x, cy - y, color);
+      this._setPixel(cx - x, cy - y, color);
+      if (p1 < 0) { x++; dx += 2 * ry2; p1 += dx + ry2; }
+      else { x++; y--; dx += 2 * ry2; dy -= 2 * rx2; p1 += dx - dy + ry2; }
+    }
+    // 区域2
+    let p2 = ry2 * (x + 0.5) * (x + 0.5) + rx2 * (y - 1) * (y - 1) - rx2 * ry2;
+    while (y >= 0) {
+      this._setPixel(cx + x, cy + y, color);
+      this._setPixel(cx - x, cy + y, color);
+      this._setPixel(cx + x, cy - y, color);
+      this._setPixel(cx - x, cy - y, color);
+      if (p2 > 0) { y--; dy -= 2 * rx2; p2 += rx2 - dy; }
+      else { y--; x++; dx += 2 * ry2; dy -= 2 * rx2; p2 += dx - dy + rx2; }
+    }
+  }
+
+  /** 矩形描边 */
+  _drawRectPixels(minX, minY, maxX, maxY, color) {
+    this._drawLinePixels(minX, minY, maxX, minY, color);
+    this._drawLinePixels(maxX, minY, maxX, maxY, color);
+    this._drawLinePixels(maxX, maxY, minX, maxY, color);
+    this._drawLinePixels(minX, maxY, minX, minY, color);
+  }
+
+  /** 五角星描边 */
+  _drawStarPixels(cx, cy, r, color) {
+    if (r < 1) { this._setPixel(cx, cy, color); return; }
+    const innerR = r * 0.4;
+    const points = [];
+    for (let i = 0; i < 10; i++) {
+      const angle = -Math.PI / 2 + i * Math.PI / 5;
+      const radius = (i % 2 === 0) ? r : innerR;
+      points.push({
+        x: Math.round(cx + Math.cos(angle) * radius),
+        y: Math.round(cy + Math.sin(angle) * radius)
+      });
+    }
+    for (let i = 0; i < 10; i++) {
+      const next = (i + 1) % 10;
+      this._drawLinePixels(points[i].x, points[i].y, points[next].x, points[next].y, color);
+    }
+  }
+
+  /** 心形描边 */
+  _drawHeartPixels(cx, cy, size, color) {
+    if (size < 1) { this._setPixel(cx, cy, color); return; }
+    const s = size / 16;
+    const points = [];
+    const steps = Math.max(40, size * 4);
+    for (let i = 0; i <= steps; i++) {
+      const t = (i / steps) * 2 * Math.PI;
+      const px = 16 * Math.pow(Math.sin(t), 3);
+      const py = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+      points.push({
+        x: Math.round(cx + px * s),
+        y: Math.round(cy + py * s)
+      });
+    }
+    for (let i = 0; i < points.length - 1; i++) {
+      this._drawLinePixels(points[i].x, points[i].y, points[i+1].x, points[i+1].y, color);
     }
   }
 

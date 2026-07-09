@@ -50,16 +50,16 @@
   function makePixelLogo(container, size) {
     if (!container) return;
     const colors = [
-      '#8b5cf6','#a78bfa','#38bdf8','#7dd3fc',
-      '#8b5cf6','#e4e4f0','#38bdf8','#7dd3fc',
-      '#a78bfa','#e4e4f0','#e4e4f0','#38bdf8',
-      '#7dd3fc','#38bdf8','#8b5cf6','#a78bfa',
+      '#ffcd75','#ffe3a3','#41a6f6','#73eff7',
+      '#ffcd75','#f4f4f4','#41a6f6','#73eff7',
+      '#ffe3a3','#f4f4f4','#f4f4f4','#41a6f6',
+      '#73eff7','#41a6f6','#ffcd75','#ffe3a3',
     ];
     container.innerHTML = '';
     container.style.display = 'grid';
     container.style.gridTemplate = `repeat(4,1fr) / repeat(4,1fr)`;
-    container.style.gap = '1px';
-    container.style.borderRadius = '3px';
+    container.style.gap = '0';
+    container.style.borderRadius = '0';
     container.style.overflow = 'hidden';
     colors.forEach(c => {
       const px = document.createElement('span');

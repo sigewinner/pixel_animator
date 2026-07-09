@@ -19,6 +19,10 @@ npm start
 
 浏览器打开 http://localhost:3000 即可使用编辑器，画廊在 http://localhost:3000/gallery.html
 
+## 更新日志
+
+各版本更新内容见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 目录结构
 
 ```
