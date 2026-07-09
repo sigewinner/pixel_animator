@@ -852,9 +852,15 @@
     engine = new CanvasEngine(canvas, canvasW, canvasH, basePixelSize);
     anim = new Animation(engine, canvasW, canvasH);
 
-    // ★★★ 绘制完成时同步帧 + 保存快照 + 更新窗口预览 ★★★
-    engine.onDrawEnd = function() {
+    // ★★★ 撤销/重做快照钩子 ★★★
+    // 落笔前（onDrawStart）：此时 anim.frames 仍是操作前状态，压入撤销栈
+    engine.onDrawStart = function() {
       pushSnapshot();
+    };
+    // 抬笔后（onDrawEnd）：把实时绘制的像素同步回 anim.frames 的当前帧，
+    // 供下一次落笔前的快照使用，并更新非活动窗口预览
+    engine.onDrawEnd = function() {
+      anim.syncCurrentFrame();
       renderInactiveWindowPreviews();
     };
 

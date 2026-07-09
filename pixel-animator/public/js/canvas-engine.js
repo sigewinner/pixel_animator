@@ -294,6 +294,8 @@ class CanvasEngine {
 
       this.isDrawing = true;
       this.pushHistory();
+      // 通知外部：落笔前先压入撤销快照（此时 anim.frames 仍是操作前状态）
+      if (this.onDrawStart) this.onDrawStart();
       if (this.tool === 'line' || this.tool === 'shape') {
         // 预览工具：记录起点和快照，拖拽时实时预览
         this.previewStart = { x, y };
@@ -358,6 +360,9 @@ class CanvasEngine {
       this.isDrawing = false;
       this.previewStart = null;
       this.previewSnapshot = null;
+      // 落笔结束：把实时像素同步回 frameData，并通知外部更新（撤销栈/预览）
+      this.syncToFrameData();
+      if (this.onDrawEnd) this.onDrawEnd();
     };
 
     this.canvas.addEventListener('mousedown', onDown);
