@@ -57,6 +57,21 @@
     </p>
   </div>
 
+  <!-- 隐藏的文件选择器 -->
+  <input type="file" id="bgFileInput" accept="image/*" style="display:none" onchange="handleBgChange(event)">
+
+  <!-- 右下角背景更换按钮 -->
+  <div class="bg-changer">
+    <button class="bg-reset-btn" id="bgResetBtn" onclick="resetBg()" title="恢复默认背景">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+      恢复默认
+    </button>
+    <button class="bg-changer-btn" onclick="document.getElementById('bgFileInput').click()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      更换背景
+    </button>
+  </div>
+
   <script>
     // ---- 像素 Logo 生成 ----
     (function makeLogo() {
@@ -150,6 +165,40 @@
       const user = { username: '游客', guest: true, loginAt: Date.now() };
       localStorage.setItem('pa_user', JSON.stringify(user));
       window.location.href = 'index.html';
+    }
+
+    // ---- 自定义背景图管理 ----
+    const BG_STORAGE_KEY = 'pa_login_bg';
+
+    // 加载自定义背景
+    (function loadBg() {
+      const saved = localStorage.getItem(BG_STORAGE_KEY);
+      if (saved) {
+        document.body.style.backgroundImage =
+          'linear-gradient(rgba(13,14,26,0.55), rgba(13,14,26,0.55)), url(' + saved + ')';
+        document.getElementById('bgResetBtn').classList.add('show');
+      }
+    })();
+
+    function handleBgChange(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const dataUrl = ev.target.result;
+        localStorage.setItem(BG_STORAGE_KEY, dataUrl);
+        document.body.style.backgroundImage =
+          'linear-gradient(rgba(13,14,26,0.55), rgba(13,14,26,0.55)), url(' + dataUrl + ')';
+        document.getElementById('bgResetBtn').classList.add('show');
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+
+    function resetBg() {
+      localStorage.removeItem(BG_STORAGE_KEY);
+      document.body.style.backgroundImage = '';
+      document.getElementById('bgResetBtn').classList.remove('show');
     }
   </script>
 </body>

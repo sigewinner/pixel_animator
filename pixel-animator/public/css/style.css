@@ -259,6 +259,58 @@ img, canvas {
 .auth-footer a { color: var(--accent); text-decoration: none; }
 .auth-footer a:hover { color: var(--accent-hi); text-decoration: underline; }
 
+/* 更换背景按钮 */
+.bg-changer {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+.bg-changer-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(26,26,46,0.75);
+  backdrop-filter: blur(8px);
+  border: 2px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  border-radius: 0;
+  transition: none;
+}
+.bg-changer-btn:hover {
+  background: rgba(26,26,46,0.9);
+  color: var(--text);
+  border-color: var(--primary);
+}
+.bg-changer-btn svg { flex-shrink: 0; }
+.bg-reset-btn {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(248,113,113,0.15);
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(248,113,113,0.4);
+  color: var(--danger);
+  font-size: 11px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  border-radius: 0;
+}
+.bg-reset-btn:hover {
+  background: rgba(248,113,113,0.25);
+  border-color: var(--danger);
+}
+.bg-reset-btn.show { display: flex; }
+
 /* ==================== 编辑器主体 ==================== */
 body.editor {
   font-family: var(--font-body);
