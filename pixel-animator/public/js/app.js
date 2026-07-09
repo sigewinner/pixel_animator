@@ -135,6 +135,15 @@
     isDeletingColor = false;
   }
 
+  // ---- 音效节流 ----
+  var lastSfxTime = 0;
+  function throttledSfx(fn) {
+    var now = Date.now();
+    if (now - lastSfxTime < 40) return;
+    lastSfxTime = now;
+    if (fn) fn();
+  }
+
   // ---- 项目草稿保存 ----
   var saveTimeout = null;
   var isSaving = false;
@@ -353,6 +362,7 @@
         document.getElementById('colorPicker').value = targetColor;
         engine.setColor(targetColor);
         updateColorPanel(targetColor, true);
+        SFX.eyedropper();
         document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
         var swatches = document.querySelectorAll('.swatch');
         for (var i = 0; i < swatches.length; i++) {
@@ -405,9 +415,11 @@
     }
 
     document.getElementById('btnSaveDraft').addEventListener('click', function() {
+      SFX.save();
       saveDraftLocally(true);
     });
     document.getElementById('btnSaveProject').addEventListener('click', function() {
+      SFX.save();
       saveProjectToServer(true);
     });
 
@@ -419,8 +431,22 @@
         if (!content) return;
         var isCollapsed = this.classList.toggle('collapsed');
         content.classList.toggle('collapsed', isCollapsed);
+        SFX.toggle();
       });
     });
+
+    // ---- 音效开关 ----
+    var soundBtn = document.getElementById('btnSoundToggle');
+    if (soundBtn) {
+      var onIcon = document.getElementById('soundOnIcon');
+      var offIcon = document.getElementById('soundOffIcon');
+      if (SFX.muted) { onIcon.style.display = 'none'; offIcon.style.display = ''; }
+      soundBtn.addEventListener('click', function() {
+        var m = SFX.toggleMute();
+        onIcon.style.display = m ? 'none' : '';
+        offIcon.style.display = m ? '' : 'none';
+      });
+    }
 
     engine.render();
     // 初始保存快照
@@ -474,6 +500,7 @@
           return;
         }
         selectColor(color, sw);
+        SFX.pick();
         switchToPencil();
       });
       // Right-click: delete single color (both default and custom)
@@ -513,6 +540,7 @@
         selectedColor = norm;
         updateColorPanel(norm, false);
         document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
+        throttledSfx(function() { SFX.pick(); });
         switchToPencil();
       }
     });
@@ -540,6 +568,7 @@
       if (newIdx !== curIdx) {
         var palette = getActivePalette();
         selectColor(palette[newIdx], swatches[newIdx]);
+        SFX.pick();
         switchToPencil();
       }
     };
@@ -635,12 +664,12 @@
   }
 
   function bindPaletteActions() {
-    document.getElementById('btnDeleteColor').addEventListener('click', deleteSelectedColor);
-    document.getElementById('btnResetPalette').addEventListener('click', resetPalette);
-    document.getElementById('btnBatchDelete').addEventListener('click', toggleBatchDeleteMode);
-    document.getElementById('btnBatchDeleteConfirm').addEventListener('click', confirmBatchDelete);
-    document.getElementById('btnBatchDeleteCancel').addEventListener('click', toggleBatchDeleteMode);
-    document.getElementById('btnBatchSelectAll').addEventListener('click', batchSelectAllColors);
+    document.getElementById('btnDeleteColor').addEventListener('click', function() { SFX.click(); deleteSelectedColor(); });
+    document.getElementById('btnResetPalette').addEventListener('click', function() { SFX.confirm(); resetPalette(); });
+    document.getElementById('btnBatchDelete').addEventListener('click', function() { SFX.toggle(); toggleBatchDeleteMode(); });
+    document.getElementById('btnBatchDeleteConfirm').addEventListener('click', function() { SFX.delete(); confirmBatchDelete(); });
+    document.getElementById('btnBatchDeleteCancel').addEventListener('click', function() { SFX.cancel(); toggleBatchDeleteMode(); });
+    document.getElementById('btnBatchSelectAll').addEventListener('click', function() { SFX.click(); batchSelectAllColors(); });
   }
 
   // ---- 批量删除 ----
@@ -732,6 +761,7 @@
     if (hexEl) {
       hexEl.addEventListener('click', function() {
         var text = hexEl.textContent;
+        SFX.confirm();
         if (navigator.clipboard) {
           navigator.clipboard.writeText(text).then(function() {
             hexEl.classList.add('copied');
@@ -764,6 +794,7 @@
       addBtn.addEventListener('click', function() {
         if (selectedColor) {
           addCustomColor(selectedColor);
+          SFX.add();
         }
       });
     }
@@ -810,6 +841,7 @@
           document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
           document.querySelectorAll('.temp-swatch').forEach(function(s) { s.classList.remove('active'); });
           sw.classList.add('active');
+          SFX.pick();
           switchToPencil();
         }
       });
@@ -835,6 +867,7 @@
 
     btnOpen.addEventListener('click', function() {
       overlay.classList.add('show');
+      SFX.open();
       var cur = engine.color || '#000000';
       var initColor = (cur === '#000000' || cur === '#ffffff') ? '#ff0000' : cur;
       if (!colorWheel) {
@@ -848,11 +881,13 @@
               document.getElementById('colorPicker').value = norm;
               updateColorPanel(norm, false);
               document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
+              throttledSfx(function() { SFX.pick(); });
               switchToPencil();
             }
           },
           onAddToPalette: function(hex) {
             addCustomColor(hex);
+            SFX.add();
           },
         });
       } else {
@@ -860,9 +895,9 @@
       }
     });
 
-    btnClose.addEventListener('click', function() { overlay.classList.remove('show'); });
+    btnClose.addEventListener('click', function() { overlay.classList.remove('show'); SFX.close(); });
     overlay.addEventListener('click', function(e) {
-      if (e.target === overlay) overlay.classList.remove('show');
+      if (e.target === overlay) { overlay.classList.remove('show'); SFX.close(); }
     });
 
     var quantToggle = document.getElementById('quantizeToggle');
@@ -873,6 +908,7 @@
       ditherRow.style.display = quantToggle.checked ? 'flex' : 'none';
       extractRow.style.display = quantToggle.checked ? 'flex' : 'none';
       if (!quantToggle.checked) extractToggle.checked = false;
+      SFX.toggle();
     });
     ditherRow.style.display = quantToggle.checked ? 'flex' : 'none';
     extractRow.style.display = quantToggle.checked ? 'flex' : 'none';
@@ -881,6 +917,7 @@
         quantToggle.checked = true;
         ditherRow.style.display = 'flex';
       }
+      SFX.toggle();
     });
   }
 
@@ -888,6 +925,7 @@
   function bindToolbar() {
     document.querySelectorAll('[data-tool]').forEach(function(btn) {
       btn.addEventListener('click', function() {
+        SFX.select();
         if (isDeletingColor) {
           isDeletingColor = false;
         }
@@ -913,18 +951,25 @@
 
     document.getElementById('btnUndo').addEventListener('click', function() {
       if (!undoOperation()) {
+        SFX.error();
         alert('没有可撤销的操作');
+      } else {
+        SFX.undo();
       }
     });
 
     document.getElementById('btnRedo').addEventListener('click', function() {
       if (!redoOperation()) {
+        SFX.error();
         alert('没有可重做的操作');
+      } else {
+        SFX.redo();
       }
     });
 
     document.getElementById('btnClear').addEventListener('click', function() {
       if (confirm('清空当前帧？')) {
+        SFX.delete();
         engine.clear();
         // 清空也是操作，保存快照
         var idx = anim.current;
@@ -936,6 +981,7 @@
     document.getElementById('btnGrid').addEventListener('click', function(e) {
       engine.showGrid = !engine.showGrid;
       e.currentTarget.classList.toggle('active', engine.showGrid);
+      SFX.toggle();
       engine.render();
     });
 
@@ -946,6 +992,7 @@
         var size = parseInt(eraserSizeSlider.value);
         engine.setEraserSize(size);
         eraserSizeLabel.textContent = size + 'px';
+        throttledSfx(function() { SFX.click(); });
       });
     }
 
@@ -956,6 +1003,7 @@
         var size = parseInt(penSizeSlider.value);
         engine.setPenSize(size);
         penSizeLabel.textContent = size + 'px';
+        throttledSfx(function() { SFX.click(); });
       });
     }
   }
@@ -969,6 +1017,7 @@
 
     anim.addFrame = function() {
       origAdd();
+      SFX.add();
       // 保存快照
       pushSnapshot();
       renderFrameList();
@@ -977,6 +1026,7 @@
 
     anim.duplicateFrame = function() {
       origDup();
+      SFX.add();
       pushSnapshot();
       renderFrameList();
       autoSave();
@@ -984,6 +1034,7 @@
 
     anim.deleteFrame = function() {
       origDel();
+      SFX.delete();
       pushSnapshot();
       renderFrameList();
       autoSave();
@@ -1101,7 +1152,7 @@
       dragHint.title = '拖拽排序';
       item.appendChild(dragHint);
 
-      item.addEventListener('click', function() { anim.selectFrame(i); });
+      item.addEventListener('click', function() { anim.selectFrame(i); SFX.frameSelect(); });
       list.appendChild(item);
     });
     autoSave();
@@ -1120,9 +1171,11 @@
       if (anim.playing) {
         anim.stop();
         btnPlay.textContent = '播放';
+        SFX.stop();
       } else {
         anim.play();
         btnPlay.textContent = '停止';
+        SFX.play();
       }
     });
 
@@ -1132,36 +1185,36 @@
       var fps = parseInt(fpsSlider.value);
       anim.setFps(fps);
       fpsLabel.textContent = fps + ' FPS';
+      throttledSfx(function() { SFX.click(); });
     });
 
     var onionBtn = document.getElementById('btnOnion');
     onionBtn.addEventListener('click', function(e) {
       var on = anim.toggleOnionSkin();
       this.classList.toggle('active', on);
+      SFX.toggle();
     });
     onionBtn.classList.toggle('active', anim.onionSkin);
   }
 
   // ---- 导出与保存 ----
   function bindExport() {
-    document.getElementById('btnGif').addEventListener('click', exportGif);
-    document.getElementById('btnSave').addEventListener('click', saveWork);
-    document.getElementById('btnPng').addEventListener('click', showExportPngOptions);
-    document.getElementById('btnSaveLocal').addEventListener('click', saveToLocalFile);
-    document.getElementById('btnLoadLocal').addEventListener('click', function() {
-      document.getElementById('projectFileInput').click();
-    });
+    document.getElementById('btnGif').addEventListener('click', function() { SFX.click(); exportGif(); });
+    document.getElementById('btnSave').addEventListener('click', function() { SFX.click(); saveWork(); });
+    document.getElementById('btnPng').addEventListener('click', function() { SFX.click(); showExportPngOptions(); });
+    document.getElementById('btnSaveLocal').addEventListener('click', function() { SFX.click(); saveToLocalFile(); });
+    document.getElementById('btnLoadLocal').addEventListener('click', function() { SFX.click(); document.getElementById('projectFileInput').click(); });
     document.getElementById('projectFileInput').addEventListener('change', function(e) {
       var file = e.target.files[0];
       if (file) loadFromLocalFile(file);
       e.target.value = '';
     });
 
-    document.getElementById('batchModalClose').addEventListener('click', closeBatchModal);
-    document.getElementById('batchExportCancel').addEventListener('click', closeBatchModal);
-    document.getElementById('batchSelectAll').addEventListener('click', function() { batchSelectAll(true); });
-    document.getElementById('batchDeselectAll').addEventListener('click', function() { batchSelectAll(false); });
-    document.getElementById('batchExportConfirm').addEventListener('click', batchExportSelected);
+    document.getElementById('batchModalClose').addEventListener('click', function() { SFX.close(); closeBatchModal(); });
+    document.getElementById('batchExportCancel').addEventListener('click', function() { SFX.close(); closeBatchModal(); });
+    document.getElementById('batchSelectAll').addEventListener('click', function() { SFX.click(); batchSelectAll(true); });
+    document.getElementById('batchDeselectAll').addEventListener('click', function() { SFX.click(); batchSelectAll(false); });
+    document.getElementById('batchExportConfirm').addEventListener('click', function() { SFX.save(); batchExportSelected(); });
     document.getElementById('batchModal').addEventListener('click', function(e) {
       if (e.target === this) closeBatchModal();
     });
@@ -1183,6 +1236,7 @@
   function openBatchModal() {
     var modal = document.getElementById('batchModal');
     modal.style.display = 'flex';
+    SFX.open();
     renderBatchFrameList();
   }
 
@@ -1229,6 +1283,7 @@
 
       card.addEventListener('click', function(e) {
         e.stopPropagation();
+        SFX.click();
         if (batchSelected.has(idx)) {
           batchSelected.delete(idx);
           this.classList.remove('selected');
@@ -1291,7 +1346,7 @@
   function bindImport() {
     var btn = document.getElementById('btnImportImg');
     var input = document.getElementById('imgInput');
-    btn.addEventListener('click', function() { input.click(); });
+    btn.addEventListener('click', function() { SFX.click(); input.click(); });
     input.addEventListener('change', function(e) {
       var files = Array.from(e.target.files);
       if (files.length === 0) return;
@@ -1583,10 +1638,16 @@
   function bindCanvasSize() {
     var resSel = document.getElementById('resolutionSelect');
     var ratioSel = document.getElementById('ratioSelect');
-    resSel.addEventListener('change', updateSizePreview);
-    ratioSel.addEventListener('change', updateSizePreview);
-    document.getElementById('btnApplySize').addEventListener('click', applyCanvasSize);
-  }
+    resSel.addEventListener('change', function() { SFX.click(); updateSizePreview(); });
+    ratioSel.addEventListener('change', function() { SFX.click(); updateSizePreview(); });
+    document.getElementById('btnApplySize').addEventListener('click', function() {
+      var res = parseInt(document.getElementById('resolutionSelect').value);
+      var ratio = document.getElementById('ratioSelect').value;
+      var dims = computeDims(res, ratio);
+      if (dims.w === canvasW && dims.h === canvasH) { SFX.error(); return; }
+      SFX.confirm();
+      applyCanvasSize();
+    });  }
 
   function updateSizePreview() {
     var res = parseInt(document.getElementById('resolutionSelect').value);
@@ -1639,9 +1700,9 @@
   }
 
   function bindZoom() {
-    document.getElementById('btnZoomIn').addEventListener('click', function() { setZoom(zoomLevel * 1.5); });
-    document.getElementById('btnZoomOut').addEventListener('click', function() { setZoom(zoomLevel / 1.5); });
-    document.getElementById('btnZoomFit').addEventListener('click', function() { setZoom(1.0); });
+    document.getElementById('btnZoomIn').addEventListener('click', function() { SFX.zoomIn(); setZoom(zoomLevel * 1.5); });
+    document.getElementById('btnZoomOut').addEventListener('click', function() { SFX.zoomOut(); setZoom(zoomLevel / 1.5); });
+    document.getElementById('btnZoomFit').addEventListener('click', function() { SFX.click(); setZoom(1.0); });
   }
 
   function setZoom(z) {
@@ -1669,12 +1730,14 @@
 
     document.getElementById('btnCropConfirm').addEventListener('click', function() {
       var rect = engine.getCropRect();
-      if (!rect || rect.w < 1 || rect.h < 1) return;
+      if (!rect || rect.w < 1 || rect.h < 1) { SFX.error(); return; }
 
       if (rect.w === engine.width && rect.h === engine.height) {
+        SFX.cancel();
         exitCropMode();
         return;
       }
+      SFX.confirm();
 
       anim.syncCurrentFrame();
       if (anim.playing) { anim.stop(); document.getElementById('btnPlay').textContent = '播放'; }
@@ -1698,7 +1761,7 @@
       exitCropMode();
     });
 
-    document.getElementById('btnCropCancel').addEventListener('click', exitCropMode);
+    document.getElementById('btnCropCancel').addEventListener('click', function() { SFX.cancel(); exitCropMode(); });
   }
 
   function exitCropMode() {
@@ -1725,6 +1788,7 @@
     a.href = tmp.toDataURL('image/png');
     a.download = 'frame.png';
     a.click();
+    SFX.save();
   }
 
   async function exportGif() {
@@ -1838,6 +1902,7 @@
         a.download = 'pixel-animation.gif';
         a.click();
         URL.revokeObjectURL(a.href);
+        if (window.SFX) SFX.save();
         btn.textContent = btnText;
         btn.disabled = false;
         if (progressBar) {
@@ -1925,6 +1990,7 @@
     a.download = safeName + '.pixa';
     a.click();
     URL.revokeObjectURL(a.href);
+    SFX.save();
   }
 
   function loadFromLocalFile(file) {
@@ -1979,6 +2045,7 @@
         undoStack = [];
         redoStack = [];
         pushSnapshot();
+        SFX.confirm();
         alert('项目加载成功: ' + (project.title || '未命名'));
       } catch (err) {
         alert('加载失败: ' + err.message);

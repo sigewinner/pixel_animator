@@ -273,10 +273,13 @@ class CanvasEngine {
   _applyTool(x, y) {
     if (this.tool === 'pencil') {
       this._stampBrush(x, y, this.color);
+      if (window.SFX) { var now = Date.now(); if (!this._lastPenSfx || now - this._lastPenSfx > 60) { this._lastPenSfx = now; SFX.pen(); } }
     } else if (this.tool === 'eraser') {
       this._stampBrush(x, y, null);
+      if (window.SFX) { var now2 = Date.now(); if (!this._lastEraseSfx || now2 - this._lastEraseSfx > 60) { this._lastEraseSfx = now2; SFX.erase(); } }
     } else if (this.tool === 'fill') {
       this._floodFill(x, y, this.color);
+      if (window.SFX) SFX.fill();
     }
     this.render();
   }
