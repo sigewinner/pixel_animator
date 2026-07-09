@@ -340,7 +340,7 @@
       }
 
       if (targetColor) {
-        addToTempPalette(targetColor);
+        selectedColor = targetColor;
         document.getElementById('colorPicker').value = targetColor;
         engine.setColor(targetColor);
         document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
@@ -1149,20 +1149,9 @@
       }
       var extracted = medianCut(sampled, 64);
       extractedCount = extracted.length;
-      var existing = new Set(getActivePalette());
-      var added = 0;
-      for (var hexIdx = 0; hexIdx < extracted.length; hexIdx++) {
-        var hex = extracted[hexIdx];
-        if (!existing.has(hex)) {
-          customColors.push(hex);
-          existing.add(hex);
-          added++;
-        }
-      }
-      localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
-      buildPalette();
-      palette = getActivePalette();
-      if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调，' + added + ' 种已加入调色板...';
+      // 提取的颜色仅用于本次量化，不添加到调色板
+      palette = getActivePalette().concat(extracted);
+      if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调用于量化...';
     }
 
     // 导入图片前，先保存当前帧的快照（但我们会先清空帧？还是替换？取决于业务逻辑）
