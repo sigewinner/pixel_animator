@@ -1,7 +1,8 @@
 // public/js/app.js - 快照方案，绝对不出错
+// [MODIFIED] 默认分辨率从 32 改为 128
 (function () {
-  var canvasW = 32;
-  var canvasH = 32;
+  var canvasW = 128;
+  var canvasH = 128;
   var zoomLevel = 1.0;
   var basePixelSize = 16;
 
@@ -35,10 +36,19 @@
 
   var customColors = [];
   try { customColors = JSON.parse(localStorage.getItem('pa_custom_colors') || '[]'); } catch (e) { customColors = []; }
-  function getActivePalette() { return DEFAULT_PALETTE.concat(customColors); }
+  var hiddenDefaults = new Set();
+  try {
+    var savedHidden = JSON.parse(localStorage.getItem('pa_hidden_defaults') || '[]');
+    hiddenDefaults = new Set(savedHidden);
+  } catch (e) { hiddenDefaults = new Set(); }
+  function getActivePalette() {
+    return DEFAULT_PALETTE.filter(function(c) { return !hiddenDefaults.has(c); }).concat(customColors);
+  }
 
   var engine, anim;
   var isDeletingColor = false;
+  var batchDeleteMode = false;
+  var batchSelectedColors = new Set();
 
   // ---- 快照历史 ----
   var undoStack = [];
@@ -123,6 +133,15 @@
     var penSizeControl = document.getElementById('penSizeControl');
     if (penSizeControl) penSizeControl.style.display = 'flex';
     isDeletingColor = false;
+  }
+
+  // ---- 音效节流 ----
+  var lastSfxTime = 0;
+  function throttledSfx(fn) {
+    var now = Date.now();
+    if (now - lastSfxTime < 40) return;
+    lastSfxTime = now;
+    if (fn) fn();
   }
 
   // ---- 项目草稿保存 ----
@@ -235,6 +254,15 @@
 
     if (project) {
       var width = project.width, height = project.height, frames = project.frames, currentFrame = project.currentFrame, fps = project.fps;
+      // ★ 版本不匹配则丢弃旧草稿：让新默认分辨率生效
+      var defaultRes = parseInt(document.getElementById('resolutionSelect').value);
+      var defaultRatio = document.getElementById('ratioSelect').value;
+      var defaultDims = computeDims(defaultRes, defaultRatio);
+      if (width !== defaultDims.w || height !== defaultDims.h) {
+        console.log('[loadProject] 旧草稿尺寸 ' + width + 'x' + height + ' 与默认 ' + defaultDims.w + 'x' + defaultDims.h + ' 不一致，丢弃旧草稿');
+        try { localStorage.removeItem('pa_local_project'); } catch (e) {}
+        return false;
+      }
       canvasW = width;
       canvasH = height;
       var newPixelSize = computePixelSize(width, height);
@@ -262,7 +290,6 @@
       renderFrameList();
       updateSizeDisplay();
       updateZoomLabel();
-      renderTempPalette();
       // 清空历史
       undoStack = [];
       redoStack = [];
@@ -330,9 +357,11 @@
       }
 
       if (targetColor) {
-        addToTempPalette(targetColor);
+        selectedColor = targetColor;
         document.getElementById('colorPicker').value = targetColor;
         engine.setColor(targetColor);
+        updateColorPanel(targetColor, true);
+        SFX.eyedropper();
         document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
         var swatches = document.querySelectorAll('.swatch');
         for (var i = 0; i < swatches.length; i++) {
@@ -346,6 +375,8 @@
     };
 
     buildPalette();
+    updateColorPanel(selectedColor, false);
+    bindColorPanel();
     bindToolbar();
     bindFrames();
     bindPlayback();
@@ -369,7 +400,6 @@
     renderFrameList();
     updateSizeDisplay();
     updateZoomLabel();
-    renderTempPalette();
 
     await loadProject();
 
@@ -383,11 +413,38 @@
     }
 
     document.getElementById('btnSaveDraft').addEventListener('click', function() {
+      SFX.save();
       saveDraftLocally(true);
     });
     document.getElementById('btnSaveProject').addEventListener('click', function() {
+      SFX.save();
       saveProjectToServer(true);
     });
+
+    // ---- 面板折叠/展开 ----
+    document.querySelectorAll('.section-toggle').forEach(function(header) {
+      header.addEventListener('click', function() {
+        var targetId = this.getAttribute('data-target');
+        var content = document.getElementById(targetId);
+        if (!content) return;
+        var isCollapsed = this.classList.toggle('collapsed');
+        content.classList.toggle('collapsed', isCollapsed);
+        SFX.toggle();
+      });
+    });
+
+    // ---- 音效开关 ----
+    var soundBtn = document.getElementById('btnSoundToggle');
+    if (soundBtn) {
+      var onIcon = document.getElementById('soundOnIcon');
+      var offIcon = document.getElementById('soundOffIcon');
+      if (SFX.muted) { onIcon.style.display = 'none'; offIcon.style.display = ''; }
+      soundBtn.addEventListener('click', function() {
+        var m = SFX.toggleMute();
+        onIcon.style.display = m ? 'none' : '';
+        offIcon.style.display = m ? '' : 'none';
+      });
+    }
 
     engine.render();
     // 初始保存快照
@@ -418,25 +475,58 @@
     var palette = getActivePalette();
     palette.forEach(function(color, i) {
       var sw = document.createElement('button');
-      sw.className = 'swatch' + (i < DEFAULT_PALETTE.length ? '' : ' custom');
+      var isDefault = DEFAULT_PALETTE.indexOf(color) !== -1;
+      sw.className = 'swatch' + (isDefault ? '' : ' custom');
       sw.style.background = color;
       sw.title = color;
       if (i === 0) sw.classList.add('active');
+      if (batchDeleteMode) {
+        wrap.classList.add('batch-mode');
+        if (batchSelectedColors.has(color)) sw.classList.add('batch-selected');
+      }
       sw.addEventListener('click', function() {
+        if (batchDeleteMode) {
+          var norm = normalizeColor(color);
+          if (batchSelectedColors.has(norm)) {
+            batchSelectedColors.delete(norm);
+            sw.classList.remove('batch-selected');
+          } else {
+            batchSelectedColors.add(norm);
+            sw.classList.add('batch-selected');
+          }
+          updateBatchDeleteInfo();
+          return;
+        }
         selectColor(color, sw);
+        SFX.pick();
         switchToPencil();
       });
-      if (i >= DEFAULT_PALETTE.length) {
-        sw.addEventListener('contextmenu', function(e) {
-          e.preventDefault();
-          if (confirm('从调色板移除颜色 ' + color + ' ?')) {
-            customColors.splice(i - DEFAULT_PALETTE.length, 1);
-            localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+      // Right-click: delete single color (both default and custom)
+      sw.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        if (batchDeleteMode) return;
+        var norm = normalizeColor(color);
+        if (isDefault) {
+          if (confirm('隐藏默认颜色 ' + norm + ' ？\n可点击"恢复默认"恢复所有颜色。')) {
+            hiddenDefaults.add(norm);
+            localStorage.setItem('pa_hidden_defaults', JSON.stringify(Array.from(hiddenDefaults)));
             buildPalette();
             updatePaletteCount();
+            autoSave();
           }
-        });
-      }
+        } else {
+          if (confirm('从调色板移除颜色 ' + norm + ' ?')) {
+            var custIdx = customColors.indexOf(norm);
+            if (custIdx !== -1) {
+              customColors.splice(custIdx, 1);
+              localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+              buildPalette();
+              updatePaletteCount();
+              autoSave();
+            }
+          }
+        }
+      });
       wrap.appendChild(sw);
     });
     var picker = document.getElementById('colorPicker');
@@ -445,12 +535,41 @@
       var norm = normalizeColor(picker.value);
       if (norm) {
         engine.setColor(norm);
+        selectedColor = norm;
+        updateColorPanel(norm, false);
         document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
+        throttledSfx(function() { SFX.pick(); });
         switchToPencil();
       }
     });
     updatePaletteCount();
     autoSave();
+
+    // 调色盘键盘导航
+    wrap.setAttribute('tabindex', '0');
+    wrap.onkeydown = function(e) {
+      var key = e.key;
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(key) === -1) return;
+      e.preventDefault();
+      var swatches = wrap.querySelectorAll('.swatch');
+      if (!swatches.length) return;
+      var cols = 5;
+      var curIdx = 0;
+      for (var j = 0; j < swatches.length; j++) {
+        if (swatches[j].classList.contains('active')) { curIdx = j; break; }
+      }
+      var newIdx = curIdx;
+      if (key === 'ArrowRight') newIdx = Math.min(curIdx + 1, swatches.length - 1);
+      else if (key === 'ArrowLeft') newIdx = Math.max(curIdx - 1, 0);
+      else if (key === 'ArrowDown') newIdx = Math.min(curIdx + cols, swatches.length - 1);
+      else if (key === 'ArrowUp') newIdx = Math.max(curIdx - cols, 0);
+      if (newIdx !== curIdx) {
+        var palette = getActivePalette();
+        selectColor(palette[newIdx], swatches[newIdx]);
+        SFX.pick();
+        switchToPencil();
+      }
+    };
   }
 
   var selectedColor = DEFAULT_PALETTE[0];
@@ -460,9 +579,41 @@
     if (!norm) return;
     selectedColor = norm;
     document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
-    if (swEl) swEl.classList.add('active');
+    if (swEl) {
+      swEl.classList.add('active');
+      swEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
     engine.setColor(norm);
     document.getElementById('colorPicker').value = norm;
+    updateColorPanel(norm, false);
+  }
+
+  function hexToRgb(hex) {
+    var h = hex.replace('#', '');
+    if (h.length === 3) h = h.split('').map(function(c) { return c + c; }).join('');
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+    };
+  }
+
+  function updateColorPanel(color, isPicked) {
+    var norm = normalizeColor(color);
+    if (!norm) return;
+    var swatch = document.getElementById('colorPanelSwatch');
+    var hexEl = document.getElementById('colorPanelHex');
+    var rgbEl = document.getElementById('colorPanelRgb');
+    if (!swatch || !hexEl || !rgbEl) return;
+    swatch.style.background = norm;
+    hexEl.textContent = norm.toUpperCase();
+    var rgb = hexToRgb(norm);
+    rgbEl.textContent = 'RGB ' + rgb.r + ', ' + rgb.g + ', ' + rgb.b;
+    if (isPicked) {
+      swatch.classList.remove('picked');
+      void swatch.offsetWidth;
+      swatch.classList.add('picked');
+    }
   }
 
   function updatePaletteCount() {
@@ -497,10 +648,13 @@
   }
 
   function resetPalette() {
-    if (customColors.length === 0) return;
-    if (!confirm('确定恢复默认调色板？自定义颜色将被清空。')) return;
+    if (customColors.length === 0 && hiddenDefaults.size === 0) return;
+    if (!confirm('确定恢复默认调色板？自定义颜色将被清空，隐藏的默认颜色将恢复。')) return;
     customColors = [];
+    hiddenDefaults.clear();
     localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+    localStorage.setItem('pa_hidden_defaults', JSON.stringify([]));
+    if (batchDeleteMode) toggleBatchDeleteMode();
     buildPalette();
     var firstSw = document.querySelector('.swatch');
     if (firstSw) selectColor(DEFAULT_PALETTE[0], firstSw);
@@ -508,63 +662,140 @@
   }
 
   function bindPaletteActions() {
-    document.getElementById('btnDeleteColor').addEventListener('click', deleteSelectedColor);
-    document.getElementById('btnResetPalette').addEventListener('click', resetPalette);
+    document.getElementById('btnDeleteColor').addEventListener('click', function() { SFX.click(); deleteSelectedColor(); });
+    document.getElementById('btnResetPalette').addEventListener('click', function() { SFX.confirm(); resetPalette(); });
+    document.getElementById('btnBatchDelete').addEventListener('click', function() { SFX.toggle(); toggleBatchDeleteMode(); });
+    document.getElementById('btnBatchDeleteConfirm').addEventListener('click', function() { SFX.delete(); confirmBatchDelete(); });
+    document.getElementById('btnBatchDeleteCancel').addEventListener('click', function() { SFX.cancel(); toggleBatchDeleteMode(); });
+    document.getElementById('btnBatchSelectAll').addEventListener('click', function() { SFX.click(); batchSelectAllColors(); });
   }
 
-  // ---- 临时调色板 ----
-  var MAX_TEMP_COLORS = 10;
-  var tempPalette = [];
-
-  function addToTempPalette(color) {
-    var norm = normalizeColor(color);
-    if (!norm) return;
-    var idx = tempPalette.indexOf(norm);
-    if (idx !== -1) tempPalette.splice(idx, 1);
-    tempPalette.unshift(norm);
-    if (tempPalette.length > MAX_TEMP_COLORS) tempPalette.pop();
-    renderTempPalette();
-  }
-
-  function renderTempPalette() {
-    var container = document.getElementById('tempPalette');
-    if (!container) return;
-    container.innerHTML = '';
-    if (tempPalette.length === 0) {
-      var empty = document.createElement('span');
-      empty.className = 'temp-empty';
-      empty.textContent = '🎨 点击吸管取色';
-      container.appendChild(empty);
-      return;
+  // ---- 批量删除 ----
+  function toggleBatchDeleteMode() {
+    batchDeleteMode = !batchDeleteMode;
+    batchSelectedColors.clear();
+    var paletteEl = document.getElementById('palette');
+    var bar = document.getElementById('batchDeleteBar');
+    if (batchDeleteMode) {
+      paletteEl.classList.add('batch-mode');
+      bar.style.display = 'flex';
+      document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
+    } else {
+      paletteEl.classList.remove('batch-mode');
+      bar.style.display = 'none';
+      document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('batch-selected'); });
     }
-    tempPalette.forEach(function(color, i) {
-      var sw = document.createElement('button');
-      sw.className = 'temp-swatch';
-      sw.style.background = color;
-      sw.title = color + ' (点击使用，右键移除)';
-      sw.dataset.color = color;
-      sw.addEventListener('click', function() {
-        var norm = normalizeColor(color);
-        if (norm) {
-          engine.setColor(norm);
-          document.getElementById('colorPicker').value = norm;
-          document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
-          document.querySelectorAll('.temp-swatch').forEach(function(s) { s.classList.remove('active'); });
-          sw.classList.add('active');
-          switchToPencil();
+    updateBatchDeleteInfo();
+  }
+
+  function updateBatchDeleteInfo() {
+    var info = document.getElementById('batchDeleteInfo');
+    var confirmBtn = document.getElementById('btnBatchDeleteConfirm');
+    if (info) info.textContent = '已选 ' + batchSelectedColors.size + ' 色';
+    if (confirmBtn) {
+      confirmBtn.textContent = '删除 (' + batchSelectedColors.size + ')';
+      confirmBtn.disabled = batchSelectedColors.size === 0;
+    }
+  }
+
+  function batchSelectAllColors() {
+    var pal = getActivePalette();
+    var allSelected = pal.every(function(c) { return batchSelectedColors.has(c); });
+    if (allSelected) {
+      batchSelectedColors.clear();
+    } else {
+      pal.forEach(function(c) { batchSelectedColors.add(c); });
+    }
+    var swatches = document.querySelectorAll('.swatch');
+    for (var i = 0; i < swatches.length; i++) {
+      if (batchSelectedColors.has(pal[i])) {
+        swatches[i].classList.add('batch-selected');
+      } else {
+        swatches[i].classList.remove('batch-selected');
+      }
+    }
+    updateBatchDeleteInfo();
+  }
+
+  function confirmBatchDelete() {
+    if (batchSelectedColors.size === 0) return;
+    if (!confirm('确定删除选中的 ' + batchSelectedColors.size + ' 种颜色？')) return;
+
+    batchSelectedColors.forEach(function(color) {
+      var norm = normalizeColor(color);
+      if (!norm) return;
+      if (DEFAULT_PALETTE.indexOf(norm) !== -1) {
+        hiddenDefaults.add(norm);
+      } else {
+        var custIdx = customColors.indexOf(norm);
+        if (custIdx !== -1) customColors.splice(custIdx, 1);
+      }
+    });
+
+    localStorage.setItem('pa_hidden_defaults', JSON.stringify(Array.from(hiddenDefaults)));
+    localStorage.setItem('pa_custom_colors', JSON.stringify(customColors));
+
+    var deletedCount = batchSelectedColors.size;
+    batchSelectedColors.clear();
+    toggleBatchDeleteMode();
+    buildPalette();
+    updatePaletteCount();
+
+    // 选中第一个可用颜色
+    var firstSw = document.querySelector('.swatch');
+    if (firstSw) {
+      var pal = getActivePalette();
+      selectColor(pal[0], firstSw);
+    }
+    autoSave();
+  }
+
+  // ---- Canva/剪映风格颜色面板交互 ----
+  function bindColorPanel() {
+    var hexEl = document.getElementById('colorPanelHex');
+    var addBtn = document.getElementById('colorPanelAdd');
+
+    // 点击 hex 复制色值
+    if (hexEl) {
+      hexEl.addEventListener('click', function() {
+        var text = hexEl.textContent;
+        SFX.confirm();
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text).then(function() {
+            hexEl.classList.add('copied');
+            hexEl.textContent = '已复制!';
+            setTimeout(function() {
+              hexEl.classList.remove('copied');
+              hexEl.textContent = text;
+            }, 800);
+          });
+        } else {
+          // fallback
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); } catch (e) {}
+          document.body.removeChild(ta);
+          hexEl.classList.add('copied');
+          hexEl.textContent = '已复制!';
+          setTimeout(function() {
+            hexEl.classList.remove('copied');
+            hexEl.textContent = text;
+          }, 800);
         }
       });
-      sw.addEventListener('contextmenu', function(e) {
-        e.preventDefault();
-        tempPalette.splice(i, 1);
-        renderTempPalette();
+    }
+
+    // + 按钮添加当前颜色到调色板
+    if (addBtn) {
+      addBtn.addEventListener('click', function() {
+        if (selectedColor) {
+          addCustomColor(selectedColor);
+          SFX.add();
+        }
       });
-      container.appendChild(sw);
-    });
-    var count = document.createElement('span');
-    count.className = 'temp-count';
-    count.textContent = tempPalette.length + '/' + MAX_TEMP_COLORS;
-    container.appendChild(count);
+    }
   }
 
   // ---- 色轮 ----
@@ -576,6 +807,7 @@
 
     btnOpen.addEventListener('click', function() {
       overlay.classList.add('show');
+      SFX.open();
       var cur = engine.color || '#000000';
       var initColor = (cur === '#000000' || cur === '#ffffff') ? '#ff0000' : cur;
       if (!colorWheel) {
@@ -585,13 +817,17 @@
             var norm = normalizeColor(hex);
             if (norm) {
               engine.setColor(norm);
+              selectedColor = norm;
               document.getElementById('colorPicker').value = norm;
+              updateColorPanel(norm, false);
               document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
+              throttledSfx(function() { SFX.pick(); });
               switchToPencil();
             }
           },
           onAddToPalette: function(hex) {
             addCustomColor(hex);
+            SFX.add();
           },
         });
       } else {
@@ -599,9 +835,9 @@
       }
     });
 
-    btnClose.addEventListener('click', function() { overlay.classList.remove('show'); });
+    btnClose.addEventListener('click', function() { overlay.classList.remove('show'); SFX.close(); });
     overlay.addEventListener('click', function(e) {
-      if (e.target === overlay) overlay.classList.remove('show');
+      if (e.target === overlay) { overlay.classList.remove('show'); SFX.close(); }
     });
 
     var quantToggle = document.getElementById('quantizeToggle');
@@ -618,6 +854,7 @@
       ditherRow.style.display = quantToggle.checked ? 'flex' : 'none';
       extractRow.style.display = quantToggle.checked ? 'flex' : 'none';
       if (!quantToggle.checked) extractToggle.checked = false;
+      SFX.toggle();
     });
     
     extractToggle.addEventListener('change', function() {
@@ -625,6 +862,7 @@
         quantToggle.checked = true;
         ditherRow.style.display = 'flex';
       }
+      SFX.toggle();
     });
   }
 
@@ -632,6 +870,7 @@
   function bindToolbar() {
     document.querySelectorAll('[data-tool]').forEach(function(btn) {
       btn.addEventListener('click', function() {
+        SFX.select();
         if (isDeletingColor) {
           isDeletingColor = false;
         }
@@ -642,10 +881,10 @@
         document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
         btn.classList.add('active');
         engine.setTool(btn.dataset.tool);
-        
+
         var eraserSizeControl = document.getElementById('eraserSizeControl');
         var penSizeControl = document.getElementById('penSizeControl');
-        
+
         if (eraserSizeControl) {
           eraserSizeControl.style.display = btn.dataset.tool === 'eraser' ? 'flex' : 'none';
         }
@@ -657,18 +896,25 @@
 
     document.getElementById('btnUndo').addEventListener('click', function() {
       if (!undoOperation()) {
+        SFX.error();
         alert('没有可撤销的操作');
+      } else {
+        SFX.undo();
       }
     });
 
     document.getElementById('btnRedo').addEventListener('click', function() {
       if (!redoOperation()) {
+        SFX.error();
         alert('没有可重做的操作');
+      } else {
+        SFX.redo();
       }
     });
 
     document.getElementById('btnClear').addEventListener('click', function() {
       if (confirm('清空当前帧？')) {
+        SFX.delete();
         engine.clear();
         // 清空也是操作，保存快照
         var idx = anim.current;
@@ -680,6 +926,7 @@
     document.getElementById('btnGrid').addEventListener('click', function(e) {
       engine.showGrid = !engine.showGrid;
       e.currentTarget.classList.toggle('active', engine.showGrid);
+      SFX.toggle();
       engine.render();
     });
 
@@ -690,6 +937,7 @@
         var size = parseInt(eraserSizeSlider.value);
         engine.setEraserSize(size);
         eraserSizeLabel.textContent = size + 'px';
+        throttledSfx(function() { SFX.click(); });
       });
     }
 
@@ -700,6 +948,7 @@
         var size = parseInt(penSizeSlider.value);
         engine.setPenSize(size);
         penSizeLabel.textContent = size + 'px';
+        throttledSfx(function() { SFX.click(); });
       });
     }
   }
@@ -713,6 +962,7 @@
 
     anim.addFrame = function() {
       origAdd();
+      SFX.add();
       // 保存快照
       pushSnapshot();
       renderFrameList();
@@ -721,6 +971,7 @@
 
     anim.duplicateFrame = function() {
       origDup();
+      SFX.add();
       pushSnapshot();
       renderFrameList();
       autoSave();
@@ -728,6 +979,7 @@
 
     anim.deleteFrame = function() {
       origDel();
+      SFX.delete();
       pushSnapshot();
       renderFrameList();
       autoSave();
@@ -758,7 +1010,7 @@
   function renderFrameList() {
     var list = document.getElementById('frameList');
     list.innerHTML = '';
-    
+
     if (anim.frames.length === 0) {
       var emptyMsg = document.createElement('div');
       emptyMsg.className = 'empty-frames-msg';
@@ -767,29 +1019,29 @@
       autoSave();
       return;
     }
-    
+
     var w = engine.width, h = engine.height;
     var thumbPs = Math.max(1, Math.ceil(48 / Math.max(w, h)));
-    
+
     anim.frames.forEach(function(frame, i) {
       var item = document.createElement('div');
       item.className = 'frame-item' + (i === anim.current ? ' active' : '');
       item.draggable = true;
       item.dataset.index = i;
-      
+
       item.addEventListener('dragstart', function(e) {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', String(i));
         setTimeout(function() { item.classList.add('dragging'); }, 0);
       });
-      
+
       item.addEventListener('dragend', function() {
         item.classList.remove('dragging');
         document.querySelectorAll('.frame-item.drag-over').forEach(function(el) {
           el.classList.remove('drag-over');
         });
       });
-      
+
       item.addEventListener('dragover', function(e) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
@@ -798,11 +1050,11 @@
         });
         item.classList.add('drag-over');
       });
-      
+
       item.addEventListener('dragleave', function() {
         item.classList.remove('drag-over');
       });
-      
+
       item.addEventListener('drop', function(e) {
         e.preventDefault();
         item.classList.remove('drag-over');
@@ -817,7 +1069,7 @@
           }
         }
       });
-      
+
       var thumb = document.createElement('canvas');
       thumb.width = w * thumbPs;
       thumb.height = h * thumbPs;
@@ -845,7 +1097,7 @@
       dragHint.title = '拖拽排序';
       item.appendChild(dragHint);
 
-      item.addEventListener('click', function() { anim.selectFrame(i); });
+      item.addEventListener('click', function() { anim.selectFrame(i); SFX.frameSelect(); });
       list.appendChild(item);
     });
     autoSave();
@@ -864,9 +1116,11 @@
       if (anim.playing) {
         anim.stop();
         btnPlay.textContent = '播放';
+        SFX.stop();
       } else {
         anim.play();
         btnPlay.textContent = '停止';
+        SFX.play();
       }
     });
 
@@ -876,18 +1130,21 @@
       var fps = parseInt(fpsSlider.value);
       anim.setFps(fps);
       fpsLabel.textContent = fps + ' FPS';
+      throttledSfx(function() { SFX.click(); });
     });
 
     var onionBtn = document.getElementById('btnOnion');
     onionBtn.addEventListener('click', function(e) {
       var on = anim.toggleOnionSkin();
       this.classList.toggle('active', on);
+      SFX.toggle();
     });
     onionBtn.classList.toggle('active', anim.onionSkin);
   }
 
   // ---- 导出与保存 ----
   function bindExport() {
+<<<<<<< HEAD
     document.getElementById('btnGif').addEventListener('click', exportGif);
     document.getElementById('btnSave').addEventListener('click', saveWork);
     document.getElementById('btnPng').addEventListener('click', openBatchModal);
@@ -895,17 +1152,24 @@
     document.getElementById('btnLoadLocal').addEventListener('click', function() {
       document.getElementById('projectFileInput').click();
     });
+=======
+    document.getElementById('btnGif').addEventListener('click', function() { SFX.click(); exportGif(); });
+    document.getElementById('btnSave').addEventListener('click', function() { SFX.click(); saveWork(); });
+    document.getElementById('btnPng').addEventListener('click', function() { SFX.click(); showExportPngOptions(); });
+    document.getElementById('btnSaveLocal').addEventListener('click', function() { SFX.click(); saveToLocalFile(); });
+    document.getElementById('btnLoadLocal').addEventListener('click', function() { SFX.click(); document.getElementById('projectFileInput').click(); });
+>>>>>>> f916b936aee94b214e8b831b181c76aca97ceee2
     document.getElementById('projectFileInput').addEventListener('change', function(e) {
       var file = e.target.files[0];
       if (file) loadFromLocalFile(file);
       e.target.value = '';
     });
 
-    document.getElementById('batchModalClose').addEventListener('click', closeBatchModal);
-    document.getElementById('batchExportCancel').addEventListener('click', closeBatchModal);
-    document.getElementById('batchSelectAll').addEventListener('click', function() { batchSelectAll(true); });
-    document.getElementById('batchDeselectAll').addEventListener('click', function() { batchSelectAll(false); });
-    document.getElementById('batchExportConfirm').addEventListener('click', batchExportSelected);
+    document.getElementById('batchModalClose').addEventListener('click', function() { SFX.close(); closeBatchModal(); });
+    document.getElementById('batchExportCancel').addEventListener('click', function() { SFX.close(); closeBatchModal(); });
+    document.getElementById('batchSelectAll').addEventListener('click', function() { SFX.click(); batchSelectAll(true); });
+    document.getElementById('batchDeselectAll').addEventListener('click', function() { SFX.click(); batchSelectAll(false); });
+    document.getElementById('batchExportConfirm').addEventListener('click', function() { SFX.save(); batchExportSelected(); });
     document.getElementById('batchModal').addEventListener('click', function(e) {
       if (e.target === this) closeBatchModal();
     });
@@ -917,6 +1181,7 @@
   function openBatchModal() {
     var modal = document.getElementById('batchModal');
     modal.style.display = 'flex';
+    SFX.open();
     renderBatchFrameList();
   }
 
@@ -963,6 +1228,7 @@
 
       card.addEventListener('click', function(e) {
         e.stopPropagation();
+        SFX.click();
         if (batchSelected.has(idx)) {
           batchSelected.delete(idx);
           this.classList.remove('selected');
@@ -1025,7 +1291,7 @@
   function bindImport() {
     var btn = document.getElementById('btnImportImg');
     var input = document.getElementById('imgInput');
-    btn.addEventListener('click', function() { input.click(); });
+    btn.addEventListener('click', function() { SFX.click(); input.click(); });
     input.addEventListener('change', function(e) {
       var files = Array.from(e.target.files);
       if (files.length === 0) return;
@@ -1100,6 +1366,7 @@
       // 提取更多颜色（最多256色）
       var extracted = medianCut(sampled, 256);
       extractedCount = extracted.length;
+<<<<<<< HEAD
       var existing = new Set(getActivePalette());
       var added = 0;
       for (var hexIdx = 0; hexIdx < extracted.length; hexIdx++) {
@@ -1125,6 +1392,11 @@
       buildPalette();
       palette = getActivePalette();
       if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调，' + added + ' 种已加入调色板...';
+=======
+      // 提取的颜色仅用于本次量化，不添加到调色板
+      palette = getActivePalette().concat(extracted);
+      if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调用于量化...';
+>>>>>>> f916b936aee94b214e8b831b181c76aca97ceee2
     }
   
     // 处理每一帧
@@ -1351,10 +1623,16 @@
   function bindCanvasSize() {
     var resSel = document.getElementById('resolutionSelect');
     var ratioSel = document.getElementById('ratioSelect');
-    resSel.addEventListener('change', updateSizePreview);
-    ratioSel.addEventListener('change', updateSizePreview);
-    document.getElementById('btnApplySize').addEventListener('click', applyCanvasSize);
-  }
+    resSel.addEventListener('change', function() { SFX.click(); updateSizePreview(); });
+    ratioSel.addEventListener('change', function() { SFX.click(); updateSizePreview(); });
+    document.getElementById('btnApplySize').addEventListener('click', function() {
+      var res = parseInt(document.getElementById('resolutionSelect').value);
+      var ratio = document.getElementById('ratioSelect').value;
+      var dims = computeDims(res, ratio);
+      if (dims.w === canvasW && dims.h === canvasH) { SFX.error(); return; }
+      SFX.confirm();
+      applyCanvasSize();
+    });  }
 
   function updateSizePreview() {
     var res = parseInt(document.getElementById('resolutionSelect').value);
@@ -1457,9 +1735,9 @@
   }
 
   function bindZoom() {
-    document.getElementById('btnZoomIn').addEventListener('click', function() { setZoom(zoomLevel * 1.5); });
-    document.getElementById('btnZoomOut').addEventListener('click', function() { setZoom(zoomLevel / 1.5); });
-    document.getElementById('btnZoomFit').addEventListener('click', function() { setZoom(1.0); });
+    document.getElementById('btnZoomIn').addEventListener('click', function() { SFX.zoomIn(); setZoom(zoomLevel * 1.5); });
+    document.getElementById('btnZoomOut').addEventListener('click', function() { SFX.zoomOut(); setZoom(zoomLevel / 1.5); });
+    document.getElementById('btnZoomFit').addEventListener('click', function() { SFX.click(); setZoom(1.0); });
   }
 
   function setZoom(z) {
@@ -1487,12 +1765,14 @@
 
     document.getElementById('btnCropConfirm').addEventListener('click', function() {
       var rect = engine.getCropRect();
-      if (!rect || rect.w < 1 || rect.h < 1) return;
+      if (!rect || rect.w < 1 || rect.h < 1) { SFX.error(); return; }
 
       if (rect.w === engine.width && rect.h === engine.height) {
+        SFX.cancel();
         exitCropMode();
         return;
       }
+      SFX.confirm();
 
       anim.syncCurrentFrame();
       if (anim.playing) { anim.stop(); document.getElementById('btnPlay').textContent = '播放'; }
@@ -1516,7 +1796,7 @@
       exitCropMode();
     });
 
-    document.getElementById('btnCropCancel').addEventListener('click', exitCropMode);
+    document.getElementById('btnCropCancel').addEventListener('click', function() { SFX.cancel(); exitCropMode(); });
   }
 
   function exitCropMode() {
@@ -1543,6 +1823,7 @@
     a.href = tmp.toDataURL('image/png');
     a.download = 'frame.png';
     a.click();
+    SFX.save();
   }
 
   async function exportGif() {
@@ -1662,6 +1943,7 @@
         a.download = fileName;
         a.click();
         URL.revokeObjectURL(a.href);
+        if (window.SFX) SFX.save();
         btn.textContent = btnText;
         btn.disabled = false;
         if (progressBar) {
@@ -1749,6 +2031,7 @@
     a.download = safeName + '.pixa';
     a.click();
     URL.revokeObjectURL(a.href);
+    SFX.save();
   }
 
   function loadFromLocalFile(file) {
@@ -1803,6 +2086,7 @@
         undoStack = [];
         redoStack = [];
         pushSnapshot();
+        SFX.confirm();
         alert('项目加载成功: ' + (project.title || '未命名'));
       } catch (err) {
         alert('加载失败: ' + err.message);
@@ -1816,7 +2100,7 @@
     var ratioSel = document.getElementById('ratioSelect');
     var maxDim = Math.max(w, h);
     var resolutions = [16, 24, 32, 48, 64, 96, 128];
-    var bestRes = 32;
+    var bestRes = 128;
     var bestDiff = Infinity;
     for (var i = 0; i < resolutions.length; i++) {
       var r = resolutions[i];
@@ -1846,6 +2130,7 @@
     init().catch(function(e) { console.error(e); });
   }
 })();
+<<<<<<< HEAD
 
 
 
@@ -1887,3 +2172,5 @@ const overlay = document.getElementById('cardOverlay');
 
 
 
+=======
+>>>>>>> f916b936aee94b214e8b831b181c76aca97ceee2
