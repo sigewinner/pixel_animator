@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
   <link rel="stylesheet" href="css/frutiger-metro.css?v=13">
 </head>
 <body class="editor">
@@ -228,6 +228,37 @@
         <div class="palette-count" id="paletteCount">调色板: 20 色</div>
       </div>
 
+      <!-- 视频转帧 -->
+      <div class="panel-section video-import-section">
+        <h3 class="section-toggle" data-target="videoImportContent">
+          视频转帧
+          <svg class="toggle-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </h3>
+        <div class="collapsible-content" id="videoImportContent">
+          <button class="action-btn" id="btnImportVideo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+            选择视频（≤15秒）
+          </button>
+          <input type="file" id="videoInput" accept="video/*" style="display:none">
+          <div class="import-option-row">
+            <label>采样帧率</label>
+            <select id="videoFps" class="mini-select">
+              <option value="3">3 FPS</option>
+              <option value="6">6 FPS</option>
+              <option value="8" selected>8 FPS</option>
+              <option value="12">12 FPS</option>
+              <option value="15">15 FPS</option>
+            </select>
+          </div>
+          <div class="video-info" id="videoInfo"></div>
+          <div class="video-progress" id="videoProgress" style="display:none">
+            <div class="video-progress-bar"><div class="video-progress-fill"></div></div>
+            <span class="video-progress-text">0%</span>
+          </div>
+          <div class="import-hint" id="videoImportHint"></div>
+        </div>
+      </div>
+
       <!-- 图层面板 -->
       <div class="panel-section layer-section">
         <h3 class="section-toggle" data-target="layerContent">
@@ -412,7 +443,7 @@
   <script src="js/animation.js?v=8"></script>
   <script src="js/color-wheel.js?v=7"></script>
   <script src="js/sound.js?v=1"></script>
-  <script src="js/app.js?v=16"></script>
+  <script src="js/app.js?v=17"></script>
   <script>
     (function() {
       var user = Auth.requireAuth();

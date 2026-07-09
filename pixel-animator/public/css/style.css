@@ -868,6 +868,42 @@ body.editor {
   font-family: var(--font-body);
 }
 
+/* 视频转帧 */
+.video-import-section .action-btn { width: 100%; margin-bottom: 8px; }
+.video-info {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-family: var(--font-body);
+  min-height: 14px;
+}
+.video-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.video-progress-bar {
+  flex: 1;
+  height: 12px;
+  background: var(--bg-deep);
+  border: 2px solid var(--border);
+  box-shadow: var(--bevel-in);
+  overflow: hidden;
+}
+.video-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--primary);
+}
+.video-progress-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  min-width: 32px;
+  text-align: right;
+}
+
 /* 画布区 */
 .canvas-area {
   flex: 1;

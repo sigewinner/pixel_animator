@@ -406,6 +406,7 @@
     bindPlayback();
     bindExport();
     bindImport();
+    bindVideoImport();
     bindCanvasSize();
     bindCrop();
     bindColorWheel();
@@ -1616,6 +1617,241 @@
       if (dist < bestDist) { bestDist = dist; best = c; }
     }
     return best;
+  }
+
+  // ---- 视频转帧 ----
+  function bindVideoImport() {
+    var btn = document.getElementById('btnImportVideo');
+    var input = document.getElementById('videoInput');
+    if (!btn || !input) return;
+    btn.addEventListener('click', function() { SFX.click(); input.click(); });
+    input.addEventListener('change', function(e) {
+      var file = e.target.files[0];
+      if (file) importVideo(file);
+      input.value = '';
+    });
+  }
+
+  function importVideo(file) {
+    var hint = document.getElementById('videoImportHint');
+    var info = document.getElementById('videoInfo');
+    var progressBar = document.getElementById('videoProgress');
+
+    if (!file.type.startsWith('video/')) {
+      if (hint) hint.textContent = '请选择视频文件';
+      return;
+    }
+
+    if (hint) hint.textContent = '正在加载视频...';
+    if (info) info.textContent = '';
+
+    var url = URL.createObjectURL(file);
+    var video = document.createElement('video');
+    video.preload = 'auto';
+    video.muted = true;
+    video.playsInline = true;
+
+    var cleaned = false;
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      URL.revokeObjectURL(url);
+    }
+
+    video.addEventListener('loadedmetadata', function() {
+      var duration = video.duration;
+      if (isNaN(duration) || duration <= 0) {
+        if (hint) hint.textContent = '无法读取视频时长';
+        cleanup();
+        return;
+      }
+      if (duration > 15) {
+        if (hint) hint.textContent = '视频时长 ' + duration.toFixed(1) + 's，超过 15 秒限制';
+        alert('视频时长不能超过 15 秒！\n当前时长: ' + duration.toFixed(1) + ' 秒');
+        cleanup();
+        return;
+      }
+
+      var fps = parseInt(document.getElementById('videoFps').value);
+      var totalFrames = Math.max(1, Math.ceil(duration * fps));
+
+      if (info) info.textContent = '时长: ' + duration.toFixed(1) + 's | 帧率: ' + fps + ' FPS | 预计: ' + totalFrames + ' 帧';
+      if (hint) hint.textContent = '准备提取帧...';
+
+      // 等待视频可以播放后再开始提取
+      if (video.readyState >= 2) {
+        extractVideoFrames(video, fps, totalFrames, hint, progressBar, cleanup);
+      } else {
+        video.addEventListener('canplay', function() {
+          extractVideoFrames(video, fps, totalFrames, hint, progressBar, cleanup);
+        }, { once: true });
+      }
+    });
+
+    video.addEventListener('error', function() {
+      if (hint) hint.textContent = '视频加载失败，请检查文件格式';
+      cleanup();
+    });
+
+    video.src = url;
+  }
+
+  async function extractVideoFrames(video, fps, totalFrames, hint, progressBar, cleanup) {
+    var w = engine.width, h = engine.height;
+    var opts = readImportOptions();
+    var progressFill = progressBar ? progressBar.querySelector('.video-progress-fill') : null;
+    var progressText = progressBar ? progressBar.querySelector('.video-progress-text') : null;
+
+    if (progressBar) {
+      progressBar.style.display = 'flex';
+      if (progressFill) progressFill.style.width = '0%';
+      if (progressText) progressText.textContent = '0%';
+    }
+
+    var framesData = [];
+
+    for (var i = 0; i < totalFrames; i++) {
+      var time = i / fps;
+      if (hint) hint.textContent = '正在提取帧 ' + (i + 1) + '/' + totalFrames;
+
+      // Seek 到目标时间点
+      await new Promise(function(resolve) {
+        function onSeeked() {
+          video.removeEventListener('seeked', onSeeked);
+          resolve();
+        }
+        video.addEventListener('seeked', onSeeked);
+        video.currentTime = Math.min(time, video.duration);
+      });
+
+      // 绘制视频帧到画布并提取像素数据
+      var ctx = drawVideoToCanvas(video, w, h, opts.fitMode);
+      var data = ctx.getImageData(0, 0, w, h);
+      if (opts.enhance) data = enhanceImageData(data);
+      framesData.push(data);
+
+      // 更新进度条
+      var pct = Math.round((i + 1) / totalFrames * 100);
+      if (progressFill) progressFill.style.width = pct + '%';
+      if (progressText) progressText.textContent = pct + '%';
+
+      // 让出 UI 线程，避免页面卡死
+      await new Promise(function(resolve) { setTimeout(resolve, 0); });
+    }
+
+    processVideoFrames(framesData, opts, hint, progressBar, cleanup);
+  }
+
+  function drawVideoToCanvas(video, w, h, fitMode) {
+    var tmp = document.createElement('canvas');
+    tmp.width = w; tmp.height = h;
+    var ctx = tmp.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.clearRect(0, 0, w, h);
+
+    var iw = video.videoWidth || 320;
+    var ih = video.videoHeight || 240;
+
+    if (fitMode === 'stretch') {
+      ctx.drawImage(video, 0, 0, iw, ih, 0, 0, w, h);
+    } else if (fitMode === 'contain') {
+      var scale = Math.min(w / iw, h / ih);
+      var sw = iw * scale, sh = ih * scale;
+      var dx = (w - sw) / 2, dy = (h - sh) / 2;
+      ctx.drawImage(video, 0, 0, iw, ih, dx, dy, sw, sh);
+    } else {
+      // cover
+      var scale2 = Math.max(w / iw, h / ih);
+      var sw2 = w / scale2, sh2 = h / scale2;
+      var sx = (iw - sw2) / 2, sy = (ih - sh2) / 2;
+      ctx.drawImage(video, sx, sy, sw2, sh2, 0, 0, w, h);
+    }
+    return ctx;
+  }
+
+  function processVideoFrames(framesData, opts, hint, progressBar, cleanup) {
+    var w = engine.width, h = engine.height;
+    var palette = getActivePalette();
+    var extractedCount = 0;
+
+    // 如果开启提取主色调，从所有帧采样
+    if (opts.quantize && opts.extract) {
+      var sampled = [];
+      for (var i = 0; i < framesData.length; i++) {
+        samplePixels(framesData[i].data, sampled, 4000);
+      }
+      var extracted = medianCut(sampled, 64);
+      extractedCount = extracted.length;
+      palette = getActivePalette().concat(extracted);
+      if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调，正在量化...';
+    }
+
+    // 同步当前帧
+    anim.syncCurrentFrame();
+
+    // 第一帧覆盖当前帧活动图层，其余新增帧
+    for (var dataIdx = 0; dataIdx < framesData.length; dataIdx++) {
+      var data = framesData[dataIdx];
+      var pixels = opts.quantize
+        ? quantizeFrame(data.data, w, h, palette, opts.dither)
+        : directSample(data.data, w, h);
+
+      // 颜色标准化
+      for (var p = 0; p < pixels.length; p++) {
+        if (pixels[p] !== null) {
+          var norm = normalizeColor(pixels[p]);
+          if (norm !== null) pixels[p] = norm;
+        }
+      }
+
+      if (dataIdx === 0) {
+        // 写入当前帧的活动图层
+        var frame0 = anim.frames[anim.current];
+        if (LayerUtils.isLayerFrame(frame0)) {
+          var activeL = LayerUtils.getActiveLayer(frame0);
+          if (activeL) activeL.pixels = pixels.slice();
+        } else {
+          anim.frames[anim.current] = LayerUtils.convertLegacyFrame(pixels, w, h);
+        }
+        engine.loadFrame(anim.frames[anim.current]);
+      } else {
+        // 新增帧
+        var newFrame = LayerUtils.createFrame(w, h, 'Background');
+        newFrame.layers[0].pixels = pixels.slice();
+        anim.frames.splice(anim.current + 1, 0, newFrame);
+        anim.current++;
+        engine.loadFrame(newFrame);
+      }
+    }
+
+    // 更新 UI
+    renderFrameList();
+    renderLayerList();
+    pushSnapshot();
+
+    // 隐藏进度条
+    if (progressBar) {
+      setTimeout(function() { progressBar.style.display = 'none'; }, 1000);
+    }
+
+    if (hint) {
+      var msg = framesData.length + ' 帧已从视频提取并转为像素动画';
+      if (extractedCount > 0) msg += '（提取 ' + extractedCount + ' 色用于量化）';
+      hint.textContent = msg;
+      setTimeout(function() { if (hint) hint.textContent = ''; }, 6000);
+    }
+
+    // 自动调整播放帧率以匹配视频帧率
+    var fpsVal = parseInt(document.getElementById('videoFps').value);
+    if (fpsVal && fpsVal <= 24) {
+      anim.fps = fpsVal;
+      document.getElementById('fpsSlider').value = fpsVal;
+      document.getElementById('fpsLabel').textContent = fpsVal + ' FPS';
+    }
+
+    autoSave();
+    if (cleanup) cleanup();
   }
 
   function bindCanvasSize() {
