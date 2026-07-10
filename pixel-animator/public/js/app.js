@@ -3473,6 +3473,8 @@
     // 裁剪后保存快照
     pushSnapshot();
     renderInactiveWindowPreviews();
+    // 立即把裁剪结果写回当前画布标签（尺寸 + 帧），避免后续切换画布时丢失
+    saveCurrentTabState();
       exitCropMode();
     });
 

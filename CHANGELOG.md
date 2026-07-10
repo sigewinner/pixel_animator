@@ -2,6 +2,12 @@
 
 本文件记录 Pixel Animator 各版本的更新内容。
 
+## v32.2 — 裁剪后状态持久化 + 防缓存（2026-07-10）
+
+- **裁剪结果即时写回画布标签**：在裁剪确认后立刻调用 `saveCurrentTabState()`，把裁剪后的帧数据与画布尺寸（`canvasW/canvasH/basePixelSize`）写回当前画布标签。此前裁剪结果只存在于 `anim.frames`（克隆副本），虽在下次切换画布时由 `switchTab` 触发 `saveCurrentTabState` 写回，但即时写回可避免任何异常路径下「裁剪后切回画布画面丢失」的隐患，也使自动保存 / 窗口预览立刻正确。
+- **静态资源禁用缓存**：`server/index.js` 的 `express.static` 增加 `Cache-Control: no-cache, no-store, must-revalidate`，避免浏览器沿用旧的 `app.js` / `canvas-engine.js`，导致「代码已修但页面仍显示旧 bug」。
+- **验证（puppeteer + Edge 实机，直接读取 `engine.pixels`）**：绘制→裁剪（尺寸 128→52，内容保留）→切到 2 号画布→切回 1 号，1 号画布裁剪后的内容完好（像素计数保留）、且仍可继续绘制（像素计数继续增长）。裁剪后立即在同画布绘制同样有效。
+
 ## v32.1 — 画布挂载回归修复（2026-07-10）
 
 - **修复：选中画布即丢失画面、无法绘图（回归）**

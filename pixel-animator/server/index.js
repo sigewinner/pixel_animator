@@ -8,7 +8,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// 静态资源不缓存，避免浏览器沿用旧的 app.js / canvas-engine.js（修复后看不到效果）
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  maxAge: 0,
+  setHeaders: function (res) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+}));
 
 // ---- 用户认证 ----
 
