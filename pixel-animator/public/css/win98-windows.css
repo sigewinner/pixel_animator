@@ -33,7 +33,7 @@
     inset -1px -1px 0 rgba(160, 170, 190, 0.5);
   background: linear-gradient(180deg, #f8faff 0%, #f0f4fa 100%);
   overflow: auto;
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, opacity 0.22s ease, transform 0.22s ease;
 }
 
 .canvas-window.active {
@@ -369,8 +369,12 @@
 
 /* ===== Minimized State ===== */
 .canvas-window.minimized {
-  /* 最小化：直接从画面消失，仅任务栏按钮保留（与系统窗体行为一致） */
-  display: none !important;
+  /* 最小化：淡出并缩向任务栏方向，结束后不可见且不可交互；
+     仍保留在 DOM 中，以便平滑动画与点击任务栏恢复（替代 display:none 以支持过渡） */
+  opacity: 0;
+  transform: scale(0.08) translateY(220px);
+  transform-origin: center bottom;
+  pointer-events: none;
 }
 
 /* ===== Maximized State ===== */
@@ -595,32 +599,10 @@
   flex-grow: 0;
 }
 
-/* ===== Window minimize animation ===== */
-@keyframes winMinimize {
-  0% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0.7; transform: scale(0.02) translateY(200px); }
-}
-
-@keyframes winRestore {
-  0% { opacity: 0.7; transform: scale(0.02) translateY(200px); }
-  100% { opacity: 1; transform: scale(1); }
-}
-
-@keyframes winMaximize {
-  0% { transform: scale(0.95); }
-  100% { transform: scale(1); }
-}
-
-.canvas-window.animating-minimize {
-  animation: winMinimize 0.25s ease forwards;
-}
-
-.canvas-window.animating-restore {
-  animation: winRestore 0.25s ease forwards;
-}
-
-.canvas-window.animating-maximize {
-  animation: winMaximize 0.15s ease forwards;
+/* ===== 最大化 / 还原：几何尺寸平滑过渡 =====
+   仅在动画期间给 left/top/width/height 加上过渡，避免拖拽/缩放时窗口“粘滞”跟随。 */
+.canvas-window.animating-geometry {
+  transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease, box-shadow 0.15s ease;
 }
 
 /* ===== Window drag outline (ghost) ===== */

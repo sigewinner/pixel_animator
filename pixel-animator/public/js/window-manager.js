@@ -341,7 +341,6 @@
       };
     }
 
-    win.el.classList.add('animating-minimize');
     win.state = 'minimized';
     win.el.classList.add('minimized');
     win.el.classList.remove('maximized');
@@ -360,10 +359,6 @@
 
     // Update taskbar button
     updateTaskbarButton(win);
-
-    setTimeout(function() {
-      win.el.classList.remove('animating-minimize');
-    }, 260);
   };
 
   WindowManager.maximizeWindow = function(winId) {
@@ -386,7 +381,7 @@
       };
     }
 
-    win.el.classList.add('animating-maximize');
+    win.el.classList.add('animating-geometry');
     win.state = 'maximized';
     win.el.classList.add('maximized');
     win.el.classList.remove('minimized');
@@ -399,8 +394,8 @@
     WindowManager.activateWindow(winId);
 
     setTimeout(function() {
-      win.el.classList.remove('animating-maximize');
-    }, 160);
+      win.el.classList.remove('animating-geometry');
+    }, 220);
   };
 
   WindowManager.restoreWindow = function(winId) {
@@ -408,7 +403,7 @@
     if (!win) return;
 
     if (win.state === 'minimized') {
-      win.el.classList.add('animating-restore');
+      win.el.classList.add('animating-geometry');
     }
 
     win.state = 'normal';
@@ -434,8 +429,8 @@
     updateTaskbarButton(win);
 
     setTimeout(function() {
-      win.el.classList.remove('animating-restore');
-    }, 260);
+      win.el.classList.remove('animating-geometry');
+    }, 220);
   };
 
   WindowManager.updateWindowTitle = function(winId, name) {

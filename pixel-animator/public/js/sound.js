@@ -3,6 +3,7 @@
 
 (function () {
   var audioCtx = null;
+  var resumePromise = null;
   var muted = false;
   try { muted = localStorage.getItem('pa_sound_muted') === '1'; } catch (e) {}
 
@@ -12,61 +13,97 @@
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       } catch (e) { return null; }
     }
-    if (audioCtx.state === 'suspended') audioCtx.resume();
     return audioCtx;
   }
 
-  // Play a single tone
-  function tone(freq, duration, type, volume, startTime) {
+  // Resume the AudioContext if it is suspended. Caches the promise so concurrent
+  // calls don't spawn duplicate resume() requests. Returns Promise<boolean>.
+  function ensureRunning() {
+    var ctx = getCtx();
+    if (!ctx) return Promise.resolve(false);
+    if (ctx.state === 'running') return Promise.resolve(true);
+    if (!resumePromise) {
+      try {
+        resumePromise = ctx.resume();
+      } catch (e) {
+        resumePromise = null;
+        return Promise.resolve(false);
+      }
+      resumePromise = Promise.resolve(resumePromise).then(
+        function () { resumePromise = null; return true; },
+        function () { resumePromise = null; return false; }
+      );
+    }
+    return resumePromise;
+  }
+
+  // Run cb(ctx) only when the context is (or becomes) running. Scheduling an
+  // oscillator on a suspended context is the classic cause of "occasionally a
+  // sound is missing" right after a cold start / tab switch, so we resume first.
+  function withRunningCtx(cb) {
+    if (muted) return;
     var ctx = getCtx();
     if (!ctx) return;
-    type = type || 'square';
-    volume = volume || 0.15;
-    var t0 = startTime || ctx.currentTime;
-    var osc = ctx.createOscillator();
-    var gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t0);
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(volume, t0 + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
+    if (ctx.state === 'running') {
+      cb(ctx);
+      return;
+    }
+    ensureRunning().then(function (ok) {
+      if (ok) cb(ctx);
+    });
+  }
+
+  // Play a single tone. `when` = delay (seconds) relative to "now".
+  function tone(freq, duration, type, volume, when) {
+    withRunningCtx(function (ctx) {
+      type = type || 'square';
+      volume = volume || 0.15;
+      var t0 = ctx.currentTime + (when || 0);
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(volume, t0 + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + duration + 0.02);
+    });
   }
 
   // Play a frequency sweep
   function sweep(freqStart, freqEnd, duration, type, volume) {
-    var ctx = getCtx();
-    if (!ctx) return;
-    type = type || 'square';
-    volume = volume || 0.15;
-    var t0 = ctx.currentTime;
-    var osc = ctx.createOscillator();
-    var gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freqStart, t0);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + duration);
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(volume, t0 + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
+    withRunningCtx(function (ctx) {
+      type = type || 'square';
+      volume = volume || 0.15;
+      var t0 = ctx.currentTime;
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freqStart, t0);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + duration);
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(volume, t0 + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + duration + 0.02);
+    });
   }
 
   // Play a sequence of tones
   function sequence(notes, type, volume) {
-    var ctx = getCtx();
-    if (!ctx) return;
-    type = type || 'square';
-    volume = volume || 0.15;
-    var t = ctx.currentTime;
-    notes.forEach(function (note) {
-      tone(note.f, note.d, type, volume, t);
-      t += note.d;
+    withRunningCtx(function (ctx) {
+      type = type || 'square';
+      volume = volume || 0.15;
+      var t = ctx.currentTime;
+      notes.forEach(function (note) {
+        tone(note.f, note.d, type, volume, t - ctx.currentTime);
+        t += note.d;
+      });
     });
   }
 
@@ -89,7 +126,7 @@
     click: function () {
       if (muted) return;
       tone(880, 0.04, 'square', 0.12);
-      tone(1320, 0.03, 'square', 0.08, getCtx().currentTime + 0.02);
+      tone(1320, 0.03, 'square', 0.08, 0.02);
     },
 
     // Tool/option select - two ascending tones
@@ -105,7 +142,7 @@
     pick: function () {
       if (muted) return;
       tone(1200, 0.03, 'square', 0.1);
-      tone(1600, 0.04, 'triangle', 0.08, getCtx().currentTime + 0.02);
+      tone(1600, 0.04, 'triangle', 0.08, 0.02);
     },
 
     // Eyedropper - high blip with quick fall
@@ -161,7 +198,7 @@
     toggle: function () {
       if (muted) return;
       tone(660, 0.02, 'square', 0.1);
-      tone(990, 0.03, 'square', 0.1, getCtx().currentTime + 0.02);
+      tone(990, 0.03, 'square', 0.1, 0.02);
     },
 
     // Play animation - rising arpeggio
@@ -199,7 +236,7 @@
     error: function () {
       if (muted) return;
       tone(140, 0.12, 'sawtooth', 0.12);
-      tone(110, 0.1, 'sawtooth', 0.1, getCtx().currentTime + 0.06);
+      tone(110, 0.1, 'sawtooth', 0.1, 0.06);
     },
 
     // Zoom in
@@ -252,4 +289,17 @@
   };
 
   window.SFX = SFX;
+
+  // Unlock / resume the AudioContext on the first user gesture so the very first
+  // sounds are never dropped by the browser's autoplay policy (cold start / tab
+  // switch commonly leaves the context suspended until a gesture occurs).
+  function unlockOnGesture() {
+    var ctx = getCtx();
+    if (ctx && ctx.state !== 'running') {
+      try { ctx.resume(); } catch (e) {}
+    }
+  }
+  ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) {
+    window.addEventListener(ev, unlockOnGesture, { once: true, passive: true });
+  });
 })();

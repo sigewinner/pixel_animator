@@ -2,6 +2,29 @@
 
 本文件记录 Pixel Animator 各版本的更新内容。
 
+## v32.4 — 最小化/最大化过渡动画 + 音效丢失修复（2026-07-10）
+
+### 🎬 最小化 / 最大化 / 还原 过渡动画
+- **修复：最小化/最大化没有过渡，窗口「啪」地一下出现/消失，观感生硬**
+  - 原因：旧实现中最小化用 `display: none !important` 直接让元素瞬间消失，CSS 动画根本来不及播放；最大化只对 `scale` 做了 keyframes，而 `top/left/width/height` 等几何尺寸是瞬变的，也没有真正的平滑放大效果。
+  - 修复（CSS）：
+    - `.canvas-window` 基础 `transition` 增加 `opacity 0.22s` 与 `transform 0.22s`。
+    - `.minimized` 不再用 `display:none`，改为 `opacity: 0` + `transform: scale(0.08) translateY(220px)`（淡出并缩向任务栏方向），并 `pointer-events: none`；窗口仍保留在 DOM 中，因此既有平滑淡出动画，点击任务栏按钮也能正常恢复。
+    - 新增 `.animating-geometry` 类，仅在该类存在时对 `left/top/width/height` 做 `0.2s ease` 平滑过渡（动画结束后移除），避免拖拽 / 缩放窗口时跟手「粘滞」。
+    - 删除旧版无效的 `@keyframes`（winMinimize / winRestore / winMaximize）及其 `animating-*` 钩子。
+  - 修复（JS，`window-manager.js`）：`minimizeWindow` / `maximizeWindow` / `restoreWindow` 统一改用 `animating-geometry` 触发几何过渡，移除此前残留的 `animating-*` 的 `setTimeout` 逻辑。
+  - 验证（puppeteer + Edge 实机）：最小化时窗口 `opacity` 由 1 → 0.2（过渡中）→ 0 平滑淡出并缩向任务栏；最大化时窗口几何尺寸由 280px 平滑过渡到整块桌面宽度（738px）并铺满桌面区；点击任务栏按钮 / 再次点击最大化按钮均可平滑还原。
+
+### 🔊 修复「偶尔音效丢失」
+- **修复：部分点击 / 操作的提示音偶尔不响**
+  - 原因：`getCtx()` 里 `audioCtx.resume()` 是异步方法却未 `await`，当 `AudioContext` 处于 `suspended` 状态（页面刚加载、切回标签页、首次用户手势之前）时，直接在其上调度 `oscillator` 会被浏览器丢弃，表现为「偶尔没声音」。
+  - 修复（`sound.js`）：
+    - 新增 `ensureRunning()`：在 `suspended` 时调用 `resume()` 并缓存其 Promise（避免并发重复 resume），返回是否已进入 `running`。
+    - 新增 `withRunningCtx(cb)`：上下文非 `running` 时先 `await ensureRunning()` 再调度，确保 `oscillator` 只在可发声状态下被创建。
+    - 所有发声函数（`tone` / `sweep` / `sequence`）统一经 `withRunningCtx` 调度；两个音的叠加改为相对 `when`（秒）偏移，而非 `getCtx().currentTime + 延迟`。
+    - 首次用户手势（`pointerdown` / `keydown` / `touchstart`）注册一次性监听，自动 `resume()` 解锁音频上下文，保证最开始的提示音不会因自动播放策略被吞掉。
+  - 验证（puppeteer + Edge）：交互后 `SFX.click / toggle / pick / error` 均可无异常调用；在浏览器中验证 `AudioContext` 的 `resume` 模式有效（suspended → running），消除冷启动 / 切标签页后的声音丢失。
+
 ## v32.3 — 修复左侧图形溢出到右边缘（2026-07-10）
 
 - **修复：在画布左侧绘制圆形 / 椭圆 / 星形等图形时，溢出到右侧边缘**
@@ -45,7 +68,7 @@
 ### 🐛 最小化 / 最大化修复
 - **修复：最小化后仍留在画面上方一条栏**
   - 原因：`.canvas-window.minimized` 仅将高度缩为 32px 标题栏，没有真正隐藏。
-  - 修复：改为 `display: none !important`，最小化后窗口完全消失，仅保留任务栏按钮以便恢复；通过任务栏按钮可正常打开。
+  - 修复：改为淡出并缩向任务栏（详见 v32.4 的过渡动画——现以 `opacity:0 + transform` 平滑收起，仍保留在 DOM 中以支持动画与点击任务栏恢复）。
 - **修复：最大化按钮无法切换回还原状态**
   - 原因：点击最大化按钮始终调用 `maximizeWindow()`，没有处理已最大化的情况。
   - 修复：在 `maximizeWindow()` 中判断：若已最大化则调用 `restoreWindow()` 返回原尺寸；同时切换图标为 `❑`（还原），恢复时切回 `■`（最大化）。
