@@ -294,8 +294,6 @@ class CanvasEngine {
 
       this.isDrawing = true;
       this.pushHistory();
-      // 通知外部：落笔前先压入撤销快照（此时 anim.frames 仍是操作前状态）
-      if (this.onDrawStart) this.onDrawStart();
       if (this.tool === 'line' || this.tool === 'shape') {
         // 预览工具：记录起点和快照，拖拽时实时预览
         this.previewStart = { x, y };
@@ -360,9 +358,6 @@ class CanvasEngine {
       this.isDrawing = false;
       this.previewStart = null;
       this.previewSnapshot = null;
-      // 落笔结束：把实时像素同步回 frameData，并通知外部更新（撤销栈/预览）
-      this.syncToFrameData();
-      if (this.onDrawEnd) this.onDrawEnd();
     };
 
     this.canvas.addEventListener('mousedown', onDown);
@@ -410,6 +405,8 @@ class CanvasEngine {
   }
 
   _setPixel(x, y, color) {
+    // 越界像素直接丢弃，避免负 x 经 y*width+x 进位到上一行右侧（左侧图形溢出到右边缘）
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
     const i = this._idx(x, y);
     if (this.pixels[i] !== color) {
       this.pixels[i] = color;
