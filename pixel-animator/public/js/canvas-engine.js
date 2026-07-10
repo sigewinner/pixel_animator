@@ -41,7 +41,6 @@ class CanvasEngine {
     this.shapeStart = null;
     this.shapeSnapshot = null;
     this._lastMousePos = { x: 0, y: 0 };
-    this._shapePreviewDrawn = false;
 
     // 绘制回调
     this.onDrawEnd = null;
@@ -79,10 +78,6 @@ class CanvasEngine {
   }
 
   setTool(tool) {
-    // 如果正在绘制图形，先完成
-    if (this.isDrawing && this.tool === 'shape') {
-      this._finishShape();
-    }
     this.tool = tool;
     this.lastDrawX = -1;
     this.lastDrawY = -1;
@@ -116,8 +111,9 @@ class CanvasEngine {
     this.render();
   }
 
+  // ★★★ 设置图形类型 ★★★
   setShapeType(type) {
-    const validTypes = ['circle', 'ellipse', 'rect', 'star', 'diamond', 'heart'];
+    const validTypes = ['circle', 'ellipse', 'rect', 'triangle', 'star', 'diamond', 'heart'];
     if (validTypes.includes(type)) {
       this.shapeType = type;
     }
@@ -276,13 +272,12 @@ class CanvasEngine {
         this.isDrawing = true;
         this.shapeStart = { x, y };
         this.shapeSnapshot = this.pixels.slice();
-        this._shapePreviewDrawn = false;
         if (this.onDrawStart) this.onDrawStart();
         return;
       }
 
-      // 线条工具（预览模式）
-      if (this.tool === 'line') {
+      // 线条/圆形工具（预览模式）
+      if (this.tool === 'line' || this.tool === 'circle') {
         this.isDrawing = true;
         this.previewStart = { x, y };
         this.previewSnapshot = this.pixels.slice();
@@ -304,6 +299,7 @@ class CanvasEngine {
       if (!this.isDrawing) return;
       const { x, y } = this._getPixelCoord(e);
       
+      // ★★★ 缓存鼠标位置 ★★★
       this._lastMousePos = { x, y };
 
       // 裁剪工具
@@ -318,10 +314,8 @@ class CanvasEngine {
 
       // ★★★ 图形工具 - 实时预览 ★★★
       if (this.tool === 'shape' && this.shapeStart) {
-        // 从快照恢复
         this.pixels = this.shapeSnapshot.slice();
         this._drawShapeOutline(this.shapeStart.x, this.shapeStart.y, x, y, this.color);
-        this._shapePreviewDrawn = true;
         this.render();
         return;
       }
@@ -330,6 +324,15 @@ class CanvasEngine {
       if (this.tool === 'line') {
         this.pixels = this.previewSnapshot.slice();
         this._drawLinePixels(this.previewStart.x, this.previewStart.y, x, y, this.color);
+        this.render();
+        return;
+      }
+
+      // 圆形工具
+      if (this.tool === 'circle') {
+        this.pixels = this.previewSnapshot.slice();
+        const r = Math.round(Math.hypot(x - this.previewStart.x, y - this.previewStart.y));
+        this._drawCirclePixels(this.previewStart.x, this.previewStart.y, r, this.color);
         this.render();
         return;
       }
@@ -366,34 +369,30 @@ class CanvasEngine {
         const dx = Math.abs(x - this.shapeStart.x);
         const dy = Math.abs(y - this.shapeStart.y);
         
-        // 从快照恢复
-        this.pixels = this.shapeSnapshot.slice();
-        
         if (dx > 0 || dy > 0) {
-          // 有拖动，绘制图形轮廓
+          this.pushHistory();
+          this.pixels = this.shapeSnapshot.slice();
           this._drawShapeOutline(this.shapeStart.x, this.shapeStart.y, x, y, this.color);
+          if (this.onDrawEnd) {
+            this.onDrawEnd(this.pixels.slice());
+          }
         } else {
           // 点击没有拖动，画一个点
+          this.pixels = this.shapeSnapshot.slice();
           this._drawDot(this.shapeStart.x, this.shapeStart.y, this.color);
+          if (this.onDrawEnd) {
+            this.onDrawEnd(this.pixels.slice());
+          }
         }
-        
-        // 图形绘制完成后保存历史
-        // 注意：这里不调用 pushHistory，因为已经在 onDown 中 push 了
-        // 但我们需要确保 onDrawEnd 被调用
-        if (this.onDrawEnd) {
-          this.onDrawEnd(this.pixels.slice());
-        }
-        
         this.isDrawing = false;
         this.shapeStart = null;
         this.shapeSnapshot = null;
-        this._shapePreviewDrawn = false;
         this.render();
         return;
       }
 
-      // 线条工具 - 完成绘制
-      if (this.tool === 'line' && this.isDrawing) {
+      // 线条/圆形工具 - 完成绘制
+      if ((this.tool === 'line' || this.tool === 'circle') && this.isDrawing) {
         this.isDrawing = false;
         this.previewStart = null;
         this.previewSnapshot = null;
@@ -409,6 +408,7 @@ class CanvasEngine {
       // 判断是否在绘制中（非预览工具，非裁剪工具）
       const wasDrawing = this.isDrawing && 
                           this.tool !== 'line' && 
+                          this.tool !== 'circle' && 
                           this.tool !== 'crop' &&
                           this.tool !== 'eyedropper' &&
                           this.tool !== 'shape';
@@ -416,6 +416,8 @@ class CanvasEngine {
       this.isDrawing = false;
       this.previewStart = null;
       this.previewSnapshot = null;
+      this.shapeStart = null;
+      this.shapeSnapshot = null;
       this.lastDrawX = -1;
       this.lastDrawY = -1;
 
@@ -441,28 +443,6 @@ class CanvasEngine {
     this.canvas.addEventListener('touchend', onUp);
   }
 
-  _finishShape() {
-    if (this.isDrawing && this.tool === 'shape' && this.shapeStart) {
-      const { x, y } = this._lastMousePos;
-      this.pixels = this.shapeSnapshot.slice();
-      const dx = Math.abs(x - this.shapeStart.x);
-      const dy = Math.abs(y - this.shapeStart.y);
-      if (dx > 0 || dy > 0) {
-        this._drawShapeOutline(this.shapeStart.x, this.shapeStart.y, x, y, this.color);
-      } else {
-        this._drawDot(this.shapeStart.x, this.shapeStart.y, this.color);
-      }
-      if (this.onDrawEnd) {
-        this.onDrawEnd(this.pixels.slice());
-      }
-      this.isDrawing = false;
-      this.shapeStart = null;
-      this.shapeSnapshot = null;
-      this._shapePreviewDrawn = false;
-      this.render();
-    }
-  }
-
   _getPixelColor(x, y) {
     const i = this._idx(x, y);
     const color = this.pixels[i] || null;
@@ -477,6 +457,9 @@ class CanvasEngine {
       this._eraseArea(x, y);
     } else if (this.tool === 'fill') {
       this._floodFill(x, y, this.color);
+    } else if (this.tool === 'shape') {
+      // 图形工具在鼠标按下时记录起点，在拖动时预览，在松开时绘制
+      // 实际绘制在 onMove 和 onUp 中处理
     }
   }
 
@@ -564,43 +547,6 @@ class CanvasEngine {
     }
   }
 
-  // ★★★ 绘制各种图形的描边（轮廓） ★★★
-  _drawShapeOutline(x1, y1, x2, y2, color) {
-    const left = Math.min(x1, x2);
-    const right = Math.max(x1, x2);
-    const top = Math.min(y1, y2);
-    const bottom = Math.max(y1, y2);
-    const w = right - left + 1;
-    const h = bottom - top + 1;
-    const cx = (x1 + x2) / 2;
-    const cy = (y1 + y2) / 2;
-    const radiusX = Math.abs(x2 - x1) / 2;
-    const radiusY = Math.abs(y2 - y1) / 2;
-    
-    switch (this.shapeType) {
-      case 'rect':
-        this._drawRectOutline(left, top, w, h, color);
-        break;
-      case 'ellipse':
-        this._drawEllipseOutline(cx, cy, radiusX, radiusY, color);
-        break;
-      case 'star':
-        this._drawStarOutline(cx, cy, Math.min(w, h) / 2, color);
-        break;
-      case 'diamond':
-        this._drawDiamondOutline(cx, cy, radiusX, radiusY, color);
-        break;
-      case 'heart':
-        this._drawHeartOutline(cx, cy, Math.min(radiusX, radiusY), color);
-        break;
-      case 'circle':
-      default:
-        const radius = Math.round(Math.hypot(x2 - x1, y2 - y1));
-        this._drawCirclePixels(x1, y1, radius, color);
-        break;
-    }
-  }
-
   _drawCirclePixels(cx, cy, r, color) {
     if (r < 0) r = 0;
     if (r === 0) {
@@ -628,6 +574,45 @@ class CanvasEngine {
     }
   }
 
+  // ★★★ 绘制各种图形的描边（轮廓） ★★★
+  _drawShapeOutline(x1, y1, x2, y2, color) {
+    const left = Math.min(x1, x2);
+    const right = Math.max(x1, x2);
+    const top = Math.min(y1, y2);
+    const bottom = Math.max(y1, y2);
+    const w = right - left + 1;
+    const h = bottom - top + 1;
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const radius = Math.round(Math.hypot(x2 - x1, y2 - y1));
+    
+    switch (this.shapeType) {
+      case 'rect':
+        this._drawRectOutline(left, top, w, h, color);
+        break;
+      case 'ellipse':
+        this._drawEllipseOutline(cx, cy, w/2, h/2, color);
+        break;
+      case 'triangle':
+        this._drawTriangleOutline(x1, y1, x2, y2, color);
+        break;
+      case 'star':
+        this._drawStarOutline(cx, cy, Math.min(w, h) / 2, color);
+        break;
+      case 'diamond':
+        this._drawDiamondOutline(cx, cy, Math.abs(x2 - x1) / 2, Math.abs(y2 - y1) / 2, color);
+        break;
+      case 'heart':
+        this._drawHeartOutline(cx, cy, Math.min(Math.abs(x2 - x1), Math.abs(y2 - y1)) / 2, color);
+        break;
+      case 'circle':
+      default:
+        this._drawCirclePixels(x1, y1, radius, color);
+        break;
+    }
+  }
+
+  // ★★★ 矩形描边 ★★★
   _drawRectOutline(x, y, w, h, color) {
     // 上边
     for (let dx = 0; dx < w; dx++) {
@@ -647,6 +632,7 @@ class CanvasEngine {
     }
   }
 
+  // ★★★ 椭圆描边（使用Bresenham算法） ★★★
   _drawEllipseOutline(cx, cy, rx, ry, color) {
     rx = Math.abs(rx);
     ry = Math.abs(ry);
@@ -660,6 +646,7 @@ class CanvasEngine {
     let ry2 = ry * ry;
     let p1 = ry2 - rx2 * ry + 0.25 * rx2;
     
+    // 上半部分
     while (2 * ry2 * x < 2 * rx2 * y) {
       this._drawEllipsePoints(cx, cy, x, y, color);
       x++;
@@ -673,6 +660,7 @@ class CanvasEngine {
     
     let p2 = ry2 * (x + 0.5) * (x + 0.5) + rx2 * (y - 1) * (y - 1) - rx2 * ry2;
     
+    // 下半部分
     while (y >= 0) {
       this._drawEllipsePoints(cx, cy, x, y, color);
       y--;
@@ -697,6 +685,31 @@ class CanvasEngine {
     }
   }
 
+  // ★★★ 三角形描边 ★★★
+  _drawTriangleOutline(x1, y1, x2, y2, color) {
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    
+    if (len < 1) {
+      this._drawDot(x1, y1, color);
+      return;
+    }
+    
+    // 三角形三个顶点：顶点在 (x1, y1)，底边两端在 (x2, y2) 和 (2*cx - x2, 2*cy - y2)
+    const ax = x1, ay = y1;
+    const bx = x2, by = y2;
+    const cx3 = 2 * cx - x2, cy3 = 2 * cy - y2;
+    
+    // 绘制三条边
+    this._drawLinePixels(ax, ay, bx, by, color);
+    this._drawLinePixels(bx, by, cx3, cy3, color);
+    this._drawLinePixels(cx3, cy3, ax, ay, color);
+  }
+
+  // ★★★ 五角星描边 ★★★
   _drawStarOutline(cx, cy, radius, color) {
     if (radius < 1) {
       this._drawDot(Math.round(cx), Math.round(cy), color);
@@ -716,6 +729,7 @@ class CanvasEngine {
       });
     }
     
+    // 绘制星形轮廓
     for (let i = 0; i < points.length; i++) {
       const j = (i + 1) % points.length;
       this._drawLinePixels(
@@ -726,6 +740,7 @@ class CanvasEngine {
     }
   }
 
+  // ★★★ 菱形描边 ★★★
   _drawDiamondOutline(cx, cy, rx, ry, color) {
     rx = Math.abs(rx);
     ry = Math.abs(ry);
@@ -745,6 +760,7 @@ class CanvasEngine {
     this._drawLinePixels(Math.round(p4.x), Math.round(p4.y), Math.round(p1.x), Math.round(p1.y), color);
   }
 
+  // ★★★ 心形描边 ★★★
   _drawHeartOutline(cx, cy, size, color) {
     if (size < 1) {
       this._drawDot(Math.round(cx), Math.round(cy), color);
