@@ -37,6 +37,10 @@ class CanvasEngine {
     this.isDrawing = false;
     this.showGrid = true;
 
+    // 自由绘制插值：记录上一个落笔像素坐标，mousemove 时沿 Bresenham 连线盖章，避免快速拖动断点
+    this._lastX = null;
+    this._lastY = null;
+
     // 撤销重做栈
     this.history = [];
     this.future = [];
@@ -365,6 +369,8 @@ class CanvasEngine {
         // 预览工具：记录起点和快照，拖拽时实时预览
         this.previewStart = { x, y };
         this.previewSnapshot = this.pixels.slice();
+      } else if (this.tool === 'pencil' || this.tool === 'eraser') {
+        this._strokeTo(x, y);
       } else {
         this._applyTool(x, y);
       }
@@ -397,6 +403,8 @@ class CanvasEngine {
         this.pixels = this.previewSnapshot.slice();
         this._drawShape(this.shapeType, this.previewStart.x, this.previewStart.y, x, y, this.color);
         this._scheduleRender();
+      } else if (this.tool === 'pencil' || this.tool === 'eraser') {
+        this._strokeTo(x, y);
       } else {
         this._applyTool(x, y);
       }
@@ -425,6 +433,8 @@ class CanvasEngine {
       this.isDrawing = false;
       this.previewStart = null;
       this.previewSnapshot = null;
+      this._lastX = null;
+      this._lastY = null;
     };
 
     this.canvas.addEventListener('mousedown', onDown);
@@ -443,6 +453,38 @@ class CanvasEngine {
       onMove({ clientX: t.clientX, clientY: t.clientY });
     });
     this.canvas.addEventListener('touchend', onUp);
+  }
+
+  /** 自由绘制：从上一个落笔像素沿 Bresenham 直线插值到当前坐标，逐点盖章，
+   *  避免鼠标快速拖动时 mousemove 事件稀疏导致画出的线断断续续/呈虚线 */
+  _strokeTo(x, y) {
+    const color = (this.tool === 'eraser') ? null : this.color;
+    if (this._lastX == null || this._lastY == null) {
+      this._stampBrush(x, y, color);
+    } else {
+      let x0 = this._lastX, y0 = this._lastY;
+      const dx = Math.abs(x - x0), dy = Math.abs(y - y0);
+      const sx = x0 < x ? 1 : -1, sy = y0 < y ? 1 : -1;
+      let err = dx - dy;
+      while (true) {
+        this._stampBrush(x0, y0, color);
+        if (x0 === x && y0 === y) break;
+        const e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; x0 += sx; }
+        if (e2 < dx) { err += dx; y0 += sy; }
+      }
+    }
+    this._lastX = x;
+    this._lastY = y;
+    if (window.SFX) {
+      const now = Date.now();
+      if (this.tool === 'eraser') {
+        if (!this._lastEraseSfx || now - this._lastEraseSfx > 60) { this._lastEraseSfx = now; window.SFX.erase(); }
+      } else {
+        if (!this._lastPenSfx || now - this._lastPenSfx > 60) { this._lastPenSfx = now; window.SFX.pen(); }
+      }
+    }
+    this._scheduleRender();
   }
 
   _applyTool(x, y) {
