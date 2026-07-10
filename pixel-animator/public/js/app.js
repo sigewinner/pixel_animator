@@ -273,6 +273,7 @@
 
   // ---- 初始化 ----
   async function init() {
+
     var res = parseInt(document.getElementById('resolutionSelect').value);
     var ratio = document.getElementById('ratioSelect').value;
     var dims = computeDims(res, ratio);
@@ -392,6 +393,170 @@
     engine.render();
     // 初始保存快照
     pushSnapshot();
+
+
+    window.engine = engine;
+    window.anim = anim;
+    window.renderFrameList = renderFrameList;
+    window.pushSnapshot = pushSnapshot;
+    window.autoSave = autoSave;
+
+
+
+    // 在 init() 函数中，创建 engine 和 anim 之后，添加：
+
+    // 初始化图层系统
+    window.layerSystem = new LayerSystem(engine, anim);
+
+    // 修改动画系统的帧同步，使用图层系统
+    // 在 engine.onDrawEnd 回调中，更新当前图层
+    engine.onDrawEnd = function(pixelsCopy) {
+      // 更新当前图层的像素
+      const currentLayer = layerSystem.getCurrentLayer();
+      if (currentLayer) {
+        currentLayer.pixels = pixelsCopy.slice();
+      }
+      // 保存快照
+      pushSnapshot();
+    };
+
+    // 修改帧列表渲染，使用图层数据
+    // 在 renderFrameList 中，使用 layerSystem 获取合成像素
+
+
+    
+    // ---- 音效集成 ----
+    function initSoundIntegration() {
+      if (typeof window.SFX === 'undefined') {
+        console.warn('音效系统未加载');
+        return;
+      }
+      
+      var SFX = window.SFX;
+
+      // 工具切换音效
+      var origSetTool = engine.setTool.bind(engine);
+      engine.setTool = function(tool) {
+        var oldTool = this.tool;
+        origSetTool(tool);
+        if (tool !== oldTool) {
+          SFX.select();
+        }
+      };
+
+      // 绘图音效（通过 onDrawEnd 回调）
+      var origOnDrawEnd = engine.onDrawEnd;
+      engine.onDrawEnd = function(pixelsCopy) {
+        if (this.tool === 'eraser') {
+          SFX.erase();
+        } else if (this.tool === 'pencil') {
+          SFX.pen();
+        } else if (this.tool === 'fill') {
+          SFX.fill();
+        } else if (this.tool === 'eyedropper') {
+          SFX.eyedropper();
+        } else {
+          SFX.pen();
+        }
+        if (origOnDrawEnd) {
+          origOnDrawEnd.call(this, pixelsCopy);
+        }
+      };
+
+      // 吸管取色
+      var origOnColorPick = engine.onColorPick;
+      engine.onColorPick = function(color) {
+        SFX.pick();
+        if (origOnColorPick) {
+          origOnColorPick.call(this, color);
+        }
+      };
+
+      // 帧操作 - 添加
+      var origAddFrame = anim.addFrame.bind(anim);
+      anim.addFrame = function() {
+        origAddFrame();
+        SFX.add();
+      };
+
+      // 帧操作 - 复制
+      var origDupFrame = anim.duplicateFrame.bind(anim);
+      anim.duplicateFrame = function() {
+        origDupFrame();
+        SFX.add();
+      };
+
+      // 帧操作 - 删除
+      var origDeleteFrame = anim.deleteFrame.bind(anim);
+      anim.deleteFrame = function() {
+        if (this.frames.length > 1) {
+          origDeleteFrame();
+          SFX.delete();
+        } else {
+          SFX.error();
+        }
+      };
+
+      // 选择帧
+      var origSelectFrame = anim.selectFrame.bind(anim);
+      anim.selectFrame = function(index) {
+        if (index !== this.current) {
+          origSelectFrame(index);
+          SFX.frameSelect();
+        } else {
+          origSelectFrame(index);
+        }
+      };
+
+      // 播放
+      var origPlay = anim.play.bind(anim);
+      anim.play = function() {
+        origPlay();
+        SFX.play();
+      };
+
+      // 停止
+      var origStop = anim.stop.bind(anim);
+      anim.stop = function() {
+        origStop();
+        SFX.stop();
+      };
+
+      // 清空
+      var origClear = engine.clear.bind(engine);
+      engine.clear = function() {
+        origClear();
+        SFX.delete();
+      };
+
+      // 颜色选择（调色板和临时调色板）
+      document.addEventListener('click', function(e) {
+        var swatch = e.target.closest('.swatch, .temp-swatch');
+        if (swatch) {
+          SFX.pick();
+        }
+      });
+
+      // 按钮点击（通用，避免重复）
+      document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.action-btn, .tool-btn, .auth-btn, .zoom-btn, .cw-add-btn');
+        if (btn) {
+          var skipIds = ['btnPlay', 'btnUndo', 'btnRedo', 'btnAddFrame', 'btnDupFrame', 'btnDelFrame',
+                        'btnZoomIn', 'btnZoomOut', 'btnCropConfirm', 'btnCropCancel',
+                        'btnColorWheel', 'cwClose', 'open-settingcard-btn', 'settingCardClose',
+                        'open-picturecard-btn', 'pictureCardClose'];
+          if (skipIds.indexOf(btn.id) === -1 && !btn.closest('[data-tool]')) {
+            SFX.click();
+          }
+        }
+      });
+
+      console.log('🔊 音效已集成');
+    }
+
+    // 调用音效集成
+    initSoundIntegration();
+
   }
 
   // ---- 删除颜色按钮 ----
@@ -630,6 +795,7 @@
 
   // ---- 工具栏 ----
   function bindToolbar() {
+    // 工具按钮点击事件
     document.querySelectorAll('[data-tool]').forEach(function(btn) {
       btn.addEventListener('click', function() {
         if (isDeletingColor) {
@@ -639,9 +805,23 @@
           engine.clearCrop();
           document.getElementById('cropBar').style.display = 'none';
         }
-        document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
+        
+        document.querySelectorAll('[data-tool]').forEach(function(b) { 
+          b.classList.remove('active'); 
+        });
         btn.classList.add('active');
         engine.setTool(btn.dataset.tool);
+        
+        // 隐藏图层面板（工具切换时自动隐藏）
+        var layerPanel = document.getElementById('layerPanel');
+        if (layerPanel) {
+          layerPanel.style.display = 'none';
+          // 取消图层按钮的激活状态
+          var layerToggleBtn = document.getElementById('btnToggleLayers');
+          if (layerToggleBtn) {
+            layerToggleBtn.classList.remove('active');
+          }
+        }
         
         var eraserSizeControl = document.getElementById('eraserSizeControl');
         var penSizeControl = document.getElementById('penSizeControl');
@@ -654,35 +834,66 @@
         }
       });
     });
-
+  
+    // 图层切换按钮（独立绑定，类似网格按钮）
+    var layerToggleBtn = document.getElementById('btnToggleLayers');
+    if (layerToggleBtn) {
+      layerToggleBtn.addEventListener('click', function(e) {
+        e.stopPropagation();  // 防止冒泡
+        
+        var layerPanel = document.getElementById('layerPanel');
+        if (!layerPanel) return;
+        
+        // 切换激活状态（像网格按钮一样）
+        this.classList.toggle('active');
+        var isActive = this.classList.contains('active');
+        
+        // 显示/隐藏图层面板
+        layerPanel.style.display = isActive ? 'block' : 'none';
+        
+        // 如果显示，刷新图层列表
+        if (isActive && window.layerSystem) {
+          window.layerSystem._renderLayerList();
+        }
+        
+        // 如果图层面板显示，取消所有工具按钮的激活状态（可选）
+        // 但保留网格按钮的状态
+      });
+    }
+  
+    // 撤销
     document.getElementById('btnUndo').addEventListener('click', function() {
       if (!undoOperation()) {
         alert('没有可撤销的操作');
       }
     });
-
+  
+    // 重做
     document.getElementById('btnRedo').addEventListener('click', function() {
       if (!redoOperation()) {
         alert('没有可重做的操作');
       }
     });
-
+  
+    // 清空
     document.getElementById('btnClear').addEventListener('click', function() {
       if (confirm('清空当前帧？')) {
         engine.clear();
-        // 清空也是操作，保存快照
         var idx = anim.current;
         anim.frames[idx] = engine.pixels.slice();
         pushSnapshot();
         autoSave();
       }
     });
+  
+    // 网格按钮（保持原有逻辑）
     document.getElementById('btnGrid').addEventListener('click', function(e) {
       engine.showGrid = !engine.showGrid;
       e.currentTarget.classList.toggle('active', engine.showGrid);
       engine.render();
     });
-
+  
+    // 橡皮擦大小
     var eraserSizeSlider = document.getElementById('eraserSizeSlider');
     var eraserSizeLabel = document.getElementById('eraserSizeLabel');
     if (eraserSizeSlider && eraserSizeLabel) {
@@ -692,7 +903,8 @@
         eraserSizeLabel.textContent = size + 'px';
       });
     }
-
+  
+    // 钢笔大小
     var penSizeSlider = document.getElementById('penSizeSlider');
     var penSizeLabel = document.getElementById('penSizeLabel');
     if (penSizeSlider && penSizeLabel) {

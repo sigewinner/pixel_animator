@@ -41,14 +41,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--bg-deep);
+  background: var(--bg-deep);
   background-image:
-    linear-gradient(rgba(13,14,26,0.55), rgba(13,14,26,0.55)),
-    url("../img/微信图片_20260709152152_2_3.jpg");
-  background-size: cover;
-  background-position: center center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
+    radial-gradient(ellipse at 20% 20%, rgba(139,92,246,0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 80%, rgba(56,189,248,0.10) 0%, transparent 50%);
   padding: 20px;
   overflow: hidden;
   position: relative;
@@ -209,56 +205,33 @@
 .auth-footer a { color: var(--accent); text-decoration: none; }
 .auth-footer a:hover { text-decoration: underline; }
 
-/* 更换背景按钮 */
 .bg-changer {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 10;
+  right: 18px;
+  bottom: 18px;
   display: flex;
-  flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
+  z-index: 50;
 }
-.bg-changer-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  background: rgba(20,20,42,0.75);
-  backdrop-filter: blur(8px);
-  border: 2px solid var(--border);
-  color: var(--text-muted);
-  font-size: 12px;
+.bg-changer button {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e4e4f0;
+  background: rgba(35,35,64,0.82);
+  border: 1px solid rgba(139,92,246,0.5);
+  padding: 9px 14px;
+  border-radius: 8px;
   cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: var(--transition);
+  backdrop-filter: blur(6px);
+  transition: background .15s, border-color .15s, transform .1s;
 }
-.bg-changer-btn:hover {
-  background: rgba(20,20,42,0.92);
-  color: var(--text);
+.bg-changer button:hover {
+  background: rgba(45,45,80,0.92);
   border-color: var(--primary);
+  transform: translateY(-1px);
 }
-.bg-changer-btn svg { flex-shrink: 0; }
-.bg-reset-btn {
-  display: none;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: rgba(248,113,113,0.15);
-  backdrop-filter: blur(8px);
-  border: 2px solid rgba(248,113,113,0.4);
-  color: var(--danger);
-  font-size: 11px;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: var(--transition);
-}
-.bg-reset-btn:hover {
-  background: rgba(248,113,113,0.25);
-  border-color: var(--danger);
-}
-.bg-reset-btn.show { display: flex; }
+.bg-changer .bg-reset-btn { display: none; }
 
 /* ==================== 编辑器主体 ==================== */
 
@@ -1569,3 +1542,244 @@ body.gallery-body {
   align-items: center;
 }
 .batch-modal-footer .action-btn { font-size: 13px; padding: 6px 14px; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Sound toggle button */
+.sound-toggle-btn {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--fm-bevel-light) !important;
+  border-radius: 6px !important;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.9) 0%,
+    rgba(210,225,245,0.7) 48%,
+    rgba(190,210,240,0.7) 52%,
+    rgba(170,195,230,0.9) 100%) !important;
+  cursor: pointer !important;
+  color: var(--fm-text) !important;
+  box-shadow: var(--fm-gloss), 0 1px 2px rgba(0,0,0,0.15) !important;
+  transition: all 0.1s ease !important;
+}
+.sound-toggle-btn:hover {
+  background: linear-gradient(180deg,
+    #ffffff 0%,
+    #e0ecff 48%,
+    #c8dcf5 52%,
+    #b0c8e8 100%) !important;
+  box-shadow: var(--fm-gloss), 0 0 8px rgba(100,150,255,0.4) !important;
+}
+.sound-toggle-btn:active {
+  border-color: var(--fm-bevel-dark) !important;
+  box-shadow: inset 1px 1px 3px rgba(100,120,150,0.4) !important;
+}
+
+/* ==================== 图层系统样式 ==================== */
+
+/* 图层列表容器 */
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  padding-right: 2px;
+}
+
+.layer-list::-webkit-scrollbar {
+  width: 4px;
+}
+.layer-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+.layer-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 图层项 */
+.layer-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+}
+
+.layer-item:hover {
+  border-color: var(--border-hi);
+  background: var(--surface-hov);
+}
+
+.layer-item.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.2);
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.layer-item .layer-vis {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--surface-hi);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: var(--transition);
+  border: 1px solid transparent;
+  font-size: 12px;
+}
+
+.layer-item .layer-vis:hover {
+  color: var(--text);
+  border-color: var(--border-hi);
+}
+
+.layer-item .layer-vis.hidden {
+  opacity: 0.3;
+}
+
+.layer-item .layer-thumb {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  image-rendering: pixelated;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+}
+
+.layer-item .layer-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layer-item .layer-name-input {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  font-family: inherit;
+  width: 100%;
+}
+
+.layer-item .layer-name-input:focus {
+  border-bottom: 1px solid var(--primary);
+}
+
+.layer-item .layer-opacity-badge {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  min-width: 28px;
+  text-align: right;
+}
+
+/* 图层空状态 */
+.layer-empty {
+  padding: 12px 8px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* 不透明度控制行 */
+.layer-opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.layer-opacity-row label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.layer-opacity-row input[type="range"] {
+  accent-color: var(--primary);
+}
+
+/* 图层操作按钮组 */
+.layer-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.layer-actions .action-btn {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 6px;
+  min-width: 0;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.layer-actions .action-btn svg {
+  flex-shrink: 0;
+}
+
+/* 图层拖拽 */
+.layer-item.dragging {
+  opacity: 0.4;
+  transform: scale(0.97);
+}
+
+.layer-item.drag-over {
+  border-color: var(--primary-hi);
+  border-style: dashed;
+  background: rgba(139, 92, 246, 0.1);
+}
+
+/* 图层在画布上的可视化指示 */
+.layer-indicator {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  font-size: 9px;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 1px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+  opacity: 0.7;
+}
