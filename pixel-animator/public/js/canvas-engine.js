@@ -35,7 +35,12 @@ class CanvasEngine {
     this.lastDrawX = -1;
     this.lastDrawY = -1;
 
-    this.onionFrame = null;
+    // ★★★ 洋葱皮：前一帧(红) + 后一帧(蓝)，可调透明度 ★★★
+    this.onionPrev = null;
+    this.onionNext = null;
+    this.onionAlpha = 0.3;
+    this.onionPrevColor = '#ff4d4d'; // 前一帧：红
+    this.onionNextColor = '#4d9bff'; // 后一帧：蓝
 
     // ★★★ 绘制完成回调 ★★★
     this.onDrawEnd = null;
@@ -110,9 +115,16 @@ class CanvasEngine {
     if (this.onRotationChange) this.onRotationChange(this.rotation);
   }
 
-  setOnionFrame(frame) {
-    this.onionFrame = frame;
+  // 设置洋葱皮：前一帧(prev) 与 后一帧(next)，任一为 null 表示不显示
+  setOnion(prev, next) {
+    this.onionPrev = prev || null;
+    this.onionNext = next || null;
     this.render();
+  }
+  // 设置洋葱皮整体透明度（0.05 ~ 1）
+  setOnionAlpha(a) {
+    this.onionAlpha = Math.max(0.05, Math.min(1, a));
+    if (this.onionPrev || this.onionNext) this.render();
   }
 
   _updateCursor() {
@@ -174,7 +186,8 @@ class CanvasEngine {
     this.future = [];
     this.lastDrawX = -1;
     this.lastDrawY = -1;
-    this.onionFrame = null;
+    this.onionPrev = null;
+    this.onionNext = null;
     this._updateCursor();
     this.render();
   }
@@ -217,7 +230,8 @@ class CanvasEngine {
     this.hasCropSelection = false;
     this.lastDrawX = -1;
     this.lastDrawY = -1;
-    this.onionFrame = null;
+    this.onionPrev = null;
+    this.onionNext = null;
     this._updateCursor();
     this.render();
   }
@@ -506,10 +520,9 @@ class CanvasEngine {
     }
   }
 
-  render(onionFrame = null) {
+  render() {
     const ctx = this.ctx;
     const ps = this.pixelSize;
-    const onion = (onionFrame !== null) ? onionFrame : this.onionFrame;
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -522,19 +535,30 @@ class CanvasEngine {
       }
     }
 
-    if (onion) {
-      ctx.globalAlpha = 0.25;
+    // ★★★ 洋葱皮：前一帧红色、后一帧蓝色，半透明叠加在当前帧之下 ★★★
+    if (this.onionPrev) {
+      ctx.globalAlpha = this.onionAlpha;
+      ctx.fillStyle = this.onionPrevColor;
       for (let y = 0; y < this.height; y++) {
         for (let x = 0; x < this.width; x++) {
-          const c = onion[y * this.width + x];
-          if (c) {
-            ctx.fillStyle = c;
+          if (this.onionPrev[y * this.width + x]) {
             ctx.fillRect(x * ps, y * ps, ps, ps);
           }
         }
       }
-      ctx.globalAlpha = 1;
     }
+    if (this.onionNext) {
+      ctx.globalAlpha = this.onionAlpha;
+      ctx.fillStyle = this.onionNextColor;
+      for (let y = 0; y < this.height; y++) {
+        for (let x = 0; x < this.width; x++) {
+          if (this.onionNext[y * this.width + x]) {
+            ctx.fillRect(x * ps, y * ps, ps, ps);
+          }
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
 
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {

@@ -74,8 +74,10 @@ class Animation {
   }
 
   _renderOnion() {
-    const onionFrame = (this.onionSkin && this.current > 0) ? this.frames[this.current - 1] : null;
-    this.engine.setOnionFrame(onionFrame);
+    // 前一帧（红）与后一帧（蓝）同时显示，便于对位
+    const prev = (this.onionSkin && this.current > 0) ? this.frames[this.current - 1] : null;
+    const next = (this.onionSkin && this.current < this.frames.length - 1) ? this.frames[this.current + 1] : null;
+    this.engine.setOnion(prev, next);
   }
 
   toggleOnionSkin() {

@@ -1092,11 +1092,32 @@
     });
 
     var onionBtn = document.getElementById('btnOnion');
+    var onionControl = document.getElementById('onionControl');
+    var onionSlider = document.getElementById('onionAlphaSlider');
+    var onionLabel = document.getElementById('onionAlphaLabel');
+
+    function syncOnionUI() {
+      var on = anim.onionSkin;
+      onionBtn.classList.toggle('active', on);
+      if (onionControl) onionControl.style.display = on ? 'flex' : 'none';
+    }
     onionBtn.addEventListener('click', function(e) {
-      var on = anim.toggleOnionSkin();
-      this.classList.toggle('active', on);
+      anim.toggleOnionSkin();
+      syncOnionUI();
     });
-    onionBtn.classList.toggle('active', anim.onionSkin);
+    if (onionSlider) {
+      onionSlider.addEventListener('input', function() {
+        var v = parseInt(onionSlider.value);
+        engine.setOnionAlpha(v / 100);
+        if (onionLabel) onionLabel.textContent = v + '%';
+      });
+    }
+    // 用引擎默认值(0.3)初始化滑块显示
+    if (onionSlider && onionLabel) {
+      onionSlider.value = Math.round(engine.onionAlpha * 100);
+      onionLabel.textContent = onionSlider.value + '%';
+    }
+    syncOnionUI();
   }
 
   // ---- 导出与保存 ----

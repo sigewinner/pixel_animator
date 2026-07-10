@@ -274,6 +274,12 @@
             播放
           </button>
           <button class="action-btn" id="btnOnion">洋葱皮</button>
+          <div class="onion-control" id="onionControl" style="display:none;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--text-muted)">
+            <span style="display:inline-flex;align-items:center;gap:3px"><i style="width:9px;height:9px;border-radius:50%;background:#ff4d4d;display:inline-block"></i>前</span>
+            <input type="range" id="onionAlphaSlider" min="5" max="80" value="30" style="flex:1;min-width:60px">
+            <span style="display:inline-flex;align-items:center;gap:3px"><i style="width:9px;height:9px;border-radius:50%;background:#4d9bff;display:inline-block"></i>后</span>
+            <span id="onionAlphaLabel" style="min-width:30px;text-align:right">30%</span>
+          </div>
         </div>
         <div class="fps-control">
           <label>速度</label>
