@@ -52,6 +52,15 @@ class CanvasEngine {
     this.hasCropSelection = false;
     this.onCropSelect = null; // 选区完成时的回调
 
+    // 渲染优化缓冲（离屏小画布 + 棋盘格缓存 + 颜色缓存）
+    this._offscreen = null;
+    this._octx = null;
+    this._img = null;
+    this._checker = null;
+    this._colorCache = new Map();
+    this._renderScheduled = false;
+    this._pendingOnion = null;
+
     this._bindEvents();
   }
 
@@ -243,6 +252,64 @@ class CanvasEngine {
     return y * this.width + x;
   }
 
+  /** hex -> [r,g,b]，带缓存避免每次渲染重复解析 */
+  _hexToRgb(hex) {
+    let v = this._colorCache.get(hex);
+    if (v) return v;
+    v = [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16)
+    ];
+    if (this._colorCache.size > 4096) this._colorCache.clear();
+    this._colorCache.set(hex, v);
+    return v;
+  }
+
+  /** 确保离屏缓冲与棋盘格缓存尺寸匹配（尺寸变化时自动重建） */
+  _ensureBuffers() {
+    const W = this.width, H = this.height;
+    const cw = this.canvas.width, ch = this.canvas.height;
+    if (!this._offscreen) {
+      this._offscreen = document.createElement('canvas');
+      this._octx = this._offscreen.getContext('2d');
+    }
+    if (this._offscreen.width !== W || this._offscreen.height !== H) {
+      this._offscreen.width = W;
+      this._offscreen.height = H;
+      this._img = this._octx.createImageData(W, H);
+    }
+    if (!this._checker || this._checker.width !== cw || this._checker.height !== ch) {
+      this._checker = document.createElement('canvas');
+      this._checker.width = cw;
+      this._checker.height = ch;
+      const cc = this._checker.getContext('2d');
+      const ps = this.pixelSize;
+      cc.fillStyle = '#ffffff';
+      cc.fillRect(0, 0, cw, ch);
+      cc.fillStyle = '#e8e8e8';
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          if ((x + y) % 2 === 0) cc.fillRect(x * ps, y * ps, ps, ps);
+        }
+      }
+    }
+  }
+
+  /** 用 requestAnimationFrame 合并同一帧内的多次 render 调用（拖拽绘制高频路径） */
+  _scheduleRender(onionFrame) {
+    this._pendingOnion = (onionFrame != null) ? onionFrame : (this._pendingOnion || null);
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    const self = this;
+    requestAnimationFrame(function () {
+      self._renderScheduled = false;
+      const onion = self._pendingOnion;
+      self._pendingOnion = null;
+      self.render(onion);
+    });
+  }
+
   /** 鼠标事件 → 像素坐标 */
   _getPixelCoord(e) {
     const rect = this.canvas.getBoundingClientRect();
@@ -318,18 +385,18 @@ class CanvasEngine {
       // 裁剪工具：更新选区
       if (this.tool === 'crop') {
         this.cropEnd = { x, y };
-        this.render();
+        this._scheduleRender();
         return;
       }
 
       if (this.tool === 'line') {
         this.pixels = this.previewSnapshot.slice();
         this._drawLinePixels(this.previewStart.x, this.previewStart.y, x, y, this.color);
-        this.render();
+        this._scheduleRender();
       } else if (this.tool === 'shape') {
         this.pixels = this.previewSnapshot.slice();
         this._drawShape(this.shapeType, this.previewStart.x, this.previewStart.y, x, y, this.color);
-        this.render();
+        this._scheduleRender();
       } else {
         this._applyTool(x, y);
       }
@@ -389,7 +456,7 @@ class CanvasEngine {
       this._floodFill(x, y, this.color);
       if (window.SFX) SFX.fill();
     }
-    this.render();
+    this._scheduleRender();
   }
 
   /** 笔刷盖章：以 (cx,cy) 为中心画 size×size 方块 */
@@ -595,87 +662,91 @@ class CanvasEngine {
     }
   }
 
-  /** 渲染整个画布 */
+  /**
+   * 渲染整个画布
+   * 优化：离屏小画布(W×H) putImageData + 最近邻放大 drawImage，替代数千次逐像素 fillRect。
+   */
   render(onionFrame = null) {
     const ctx = this.ctx;
     const ps = this.pixelSize;
-
-    // 棋盘格背景（表示透明）
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.fillStyle = '#e8e8e8';
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        if ((x + y) % 2 === 0) {
-          ctx.fillRect(x * ps, y * ps, ps, ps);
-        }
-      }
-    }
-
-    // 洋葱皮（上一帧半透明显示）
-    if (onionFrame) {
-      ctx.globalAlpha = 0.25;
-      for (let y = 0; y < this.height; y++) {
-        for (let x = 0; x < this.width; x++) {
-          const c = onionFrame[y * this.width + x];
-          if (c) {
-            ctx.fillStyle = c;
-            ctx.fillRect(x * ps, y * ps, ps, ps);
-          }
-        }
-      }
-      ctx.globalAlpha = 1;
-    }
+    const W = this.width, H = this.height;
+    const cw = this.canvas.width, ch = this.canvas.height;
+    this._ensureBuffers();
+    const img = this._img;
+    const data = img.data;
 
     // 当前帧像素（合成所有可见图层，活动层使用 this.pixels 实时数据）
-    var composite;
+    let composite;
     if (this.frameData && this.frameData.layers.length > 1) {
-      composite = new Array(this.width * this.height).fill(null);
-      var layers = this.frameData.layers;
-      for (var li = 0; li < layers.length; li++) {
-        var lyr = layers[li];
+      composite = new Array(W * H).fill(null);
+      const layers = this.frameData.layers;
+      for (let li = 0; li < layers.length; li++) {
+        const lyr = layers[li];
         if (!lyr.visible) continue;
-        var lAlpha = lyr.opacity !== undefined ? lyr.opacity : 1;
+        const lAlpha = lyr.opacity !== undefined ? lyr.opacity : 1;
         if (lAlpha <= 0) continue;
-        // 活动图层使用 this.pixels（含实时绘制），其他用 layer.pixels
-        var lPix = (li === this.frameData.activeLayer) ? this.pixels : lyr.pixels;
-        for (var lp = 0; lp < composite.length; lp++) {
-          if (lPix[lp] !== null) {
-            composite[lp] = LayerUtils.blendPixel(lPix[lp], composite[lp], lAlpha);
-          }
+        const lPix = (li === this.frameData.activeLayer) ? this.pixels : lyr.pixels;
+        for (let p = 0; p < composite.length; p++) {
+          if (lPix[p] !== null) composite[p] = LayerUtils.blendPixel(lPix[p], composite[p], lAlpha);
         }
       }
     } else {
       composite = this.pixels;
     }
 
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        const c = composite[y * this.width + x];
+    // 1) 棋盘格背景（缓存，一次性贴图）
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this._checker, 0, 0);
+
+    // 2) 洋葱皮（半透明，画在棋盘格之上、像素之下）
+    if (onionFrame) {
+      for (let i = 0; i < onionFrame.length; i++) {
+        const c = onionFrame[i];
+        const o = i * 4;
         if (c) {
-          ctx.fillStyle = c;
-          ctx.fillRect(x * ps, y * ps, ps, ps);
+          const rgb = this._hexToRgb(c);
+          data[o] = rgb[0]; data[o + 1] = rgb[1]; data[o + 2] = rgb[2]; data[o + 3] = 255;
+        } else {
+          data[o + 3] = 0;
         }
       }
+      this._octx.putImageData(img, 0, 0);
+      ctx.globalAlpha = 0.25;
+      ctx.drawImage(this._offscreen, 0, 0, W, H, 0, 0, cw, ch);
+      ctx.globalAlpha = 1;
     }
 
-    // 网格线
+    // 3) 当前帧像素写入离屏 ImageData（透明像素 alpha=0，drawImage 时透出棋盘）
+    for (let i = 0; i < composite.length; i++) {
+      const c = composite[i];
+      const o = i * 4;
+      if (c) {
+        const rgb = this._hexToRgb(c);
+        data[o] = rgb[0]; data[o + 1] = rgb[1]; data[o + 2] = rgb[2]; data[o + 3] = 255;
+      } else {
+        data[o + 3] = 0;
+      }
+    }
+    this._octx.putImageData(img, 0, 0);
+    ctx.drawImage(this._offscreen, 0, 0, W, H, 0, 0, cw, ch);
+
+    // 4) 网格线
     if (this.showGrid && ps >= 8) {
       ctx.strokeStyle = 'rgba(0,0,0,0.12)';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      for (let x = 0; x <= this.width; x++) {
+      for (let x = 0; x <= W; x++) {
         ctx.moveTo(x * ps + 0.5, 0);
-        ctx.lineTo(x * ps + 0.5, this.canvas.height);
+        ctx.lineTo(x * ps + 0.5, ch);
       }
-      for (let y = 0; y <= this.height; y++) {
+      for (let y = 0; y <= H; y++) {
         ctx.moveTo(0, y * ps + 0.5);
-        ctx.lineTo(this.canvas.width, y * ps + 0.5);
+        ctx.lineTo(cw, y * ps + 0.5);
       }
       ctx.stroke();
     }
 
-    // 裁剪选区覆盖层
+    // 5) 裁剪选区覆盖层
     if (this.tool === 'crop' && this.cropStart && this.cropEnd) {
       const rect = this.getCropRect();
       if (rect && rect.w >= 1 && rect.h >= 1) {
@@ -686,10 +757,10 @@ class CanvasEngine {
 
         // 暗化非选区（四块矩形覆盖）
         ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(0, 0, this.canvas.width, ry1);                         // 上
-        ctx.fillRect(0, ry2, this.canvas.width, this.canvas.height - ry2);  // 下
+        ctx.fillRect(0, 0, cw, ry1);                         // 上
+        ctx.fillRect(0, ry2, cw, ch - ry2);  // 下
         ctx.fillRect(0, ry1, rx1, rect.h * ps);                              // 左
-        ctx.fillRect(rx2, ry1, this.canvas.width - rx2, rect.h * ps);       // 右
+        ctx.fillRect(rx2, ry1, cw - rx2, rect.h * ps);       // 右
 
         // 选区蓝色边框（动画虚线效果）
         ctx.strokeStyle = '#4a7fff';

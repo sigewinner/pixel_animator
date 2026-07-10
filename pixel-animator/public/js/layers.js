@@ -5,6 +5,20 @@ var LayerUtils = (function () {
 
   var _layerCounter = 0;
 
+  // 颜色解析缓存（hex -> [r,g,b]），避免逐像素 blendPixel 重复 parseInt
+  var _rgbCache = {};
+  function _parseHex(hex) {
+    var c = _rgbCache[hex];
+    if (c) return c;
+    c = [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16)
+    ];
+    _rgbCache[hex] = c;
+    return c;
+  }
+
   function nextId() { return ++_layerCounter; }
 
   /** 创建一个空图层 */
@@ -56,16 +70,14 @@ var LayerUtils = (function () {
   function blendPixel(top, bottom, alpha) {
     if (!top) return bottom;
     if (!bottom || alpha >= 1) return top;
-    var tr = parseInt(top.slice(1, 3), 16);
-    var tg = parseInt(top.slice(3, 5), 16);
-    var tb = parseInt(top.slice(5, 7), 16);
-    var br = parseInt(bottom.slice(1, 3), 16);
-    var bg = parseInt(bottom.slice(3, 5), 16);
-    var bb = parseInt(bottom.slice(5, 7), 16);
+    var t = _parseHex(top);
+    var b = _parseHex(bottom);
+    var tr = t[0], tg = t[1], tb = t[2];
+    var br = b[0], bg = b[1], bb = b[2];
     var r = Math.round(tr * alpha + br * (1 - alpha));
     var g = Math.round(tg * alpha + bg * (1 - alpha));
-    var b = Math.round(tb * alpha + bb * (1 - alpha));
-    return '#' + [r, g, b].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
+    var b2 = Math.round(tb * alpha + bb * (1 - alpha));
+    return '#' + [r, g, b2].map(function (v) { return v.toString(16).padStart(2, '0'); }).join('');
   }
 
   /**

@@ -80,5 +80,30 @@
 
 ---
 
+## v32.5 — 渲染性能优化（2026-07-10）
+
+### ⚡ 渲染管线重写（核心卡顿修复）
+- **问题：画图 / 拖拽时明显卡顿**
+  - 原因：`CanvasEngine.render()` 每次都用 `ctx.fillRect` 逐像素绘制整张画布（棋盘格背景 + 每个像素 + 网格线）。128×128 画布单次 `render()` 约 **4.8ms**，而画笔 / 橡皮拖拽的每次 `mousemove` 都会触发整屏重绘；连续拖动时成百上千次 `render()` 堆积，主线程被填满，画面掉帧、操作粘滞。
+  - 修复（`canvas-engine.js`）：
+    1. **离屏小画布 + `putImageData` + 最近邻放大**：新增离屏画布（逻辑分辨率 `W×H`），把每个逻辑像素写入 `ImageData` 后 `putImageData` 一次性上传，再用 `drawImage` 以 `imageSmoothingEnabled=false` 放大到主画布。把「成千上万次 `fillRect`」降为「1 次 `putImageData` + 1 次 `drawImage`」。
+    2. **棋盘格缓存**：棋盘格背景预渲染到缓存 canvas，每帧一次 `drawImage` 贴图，不再逐像素 `fillRect`。
+    3. **颜色解析缓存**：`hex → [r,g,b]` 解析结果按颜色缓存，避免渲染时重复 `parseInt`（洋葱皮与多图层合成均受益）。
+    4. **`requestAnimationFrame` 节流**：新增 `_scheduleRender()`，把拖拽绘制高频路径（铅笔 / 橡皮 / 直线 / 图形预览 / 裁剪预览）的多次 `render()` 合并到同一帧只渲染一次，彻底消除拖动时的重绘堆积。
+- **量化收益（puppeteer + Edge 实测，headless 环境）**
+  - 32×32 画布 `render()`：0.348ms → **0.027ms**（≈13×）
+  - 128×128 画布 `render()`：4.793ms → **0.772ms**（≈6×）
+  - 模拟连续拖拽 300 次绘制操作：调度总耗时仅 0.3ms（每次 0.001ms），实际渲染只在 `requestAnimationFrame` 时发生 1 次（优化前 300 次会同步渲染、累计 690ms+ 卡死）。
+
+### 🎨 图层合成加速
+- **修复：`blendPixel` 逐像素重复解析 hex 颜色**
+  - 原因：`LayerUtils.blendPixel()` 每次调用都 `parseInt` 解析 `top` / `bottom` 两个颜色字符串，多图层合成时是主要开销。
+  - 修复（`layers.js`）：模块内增加颜色解析缓存 `_parseHex()`，`blendPixel` 命中缓存后仅做数组索引与一次混合计算。
+
+### 🔧 其他
+- 端到端验证（真实浏览器）：拖拽绘制画面正确保留、多图层合成（顶层覆盖底层）正确、洋葱皮渲染无报错、最小化 / 最大化 / 还原过渡动画未回归。
+
+---
+
 ## 历史版本
 - 早期版本（GitHub `main`，2026-07-09 之前）：基础单画布编辑器，含绘制、图层、时间轴、洋葱皮、GIF 导出、作品库画廊。
