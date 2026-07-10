@@ -271,6 +271,24 @@
   WindowManager.destroyWindow = function(winId) {
     var win = getWindowById(winId);
     if (!win) return;
+
+    // 保护共享画布：canvasWrap / cropBar 是全局唯一的，始终位于“活动窗口”内。
+    // 若被关闭的窗口恰好是活动窗口（持有它们），win.el.remove() 会把它们连同
+    // 窗口一起从文档摘除，导致 getElementById('canvasWrap') 返回 null、画布永久
+    // 丢失（表现为“关闭某画布后其余画布画面消失、无法绘图”，且 500ms 自愈兜底
+    // 也救不回，因为元素已 null）。因此在移除窗口前，先把它们移回隐藏的
+    // #canvasWrapTemplate，使其脱离窗口但仍在文档中；随后 moveCanvasToActiveWindow
+    // / 自愈守护会重新把它挂回活动窗口。
+    var safeHolder = document.getElementById('canvasWrapTemplate');
+    if (safeHolder) {
+      ['canvasWrap', 'cropBar'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && win.el.contains(el)) {
+          safeHolder.appendChild(el);
+        }
+      });
+    }
+
     win.el.remove();
     removeTaskbarButton(winId);
     windows = windows.filter(function(w) { return w.id !== winId; });
@@ -531,6 +549,18 @@
   };
 
   WindowManager.rebuildAllWindows = function(canvasTabs, activeIndex) {
+    // 保护共享画布：重建会移除所有窗口，先把 canvasWrap / cropBar 移回隐藏的
+    // #canvasWrapTemplate，避免它们随窗口被一并摘除（getElementById 返回 null、画面丢失）。
+    var safeHolder = document.getElementById('canvasWrapTemplate');
+    if (safeHolder) {
+      ['canvasWrap', 'cropBar'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && el.parentElement && el.parentElement !== safeHolder) {
+          safeHolder.appendChild(el);
+        }
+      });
+    }
+
     // Remove all existing windows
     windows.forEach(function(w) { w.el.remove(); });
     windows = [];

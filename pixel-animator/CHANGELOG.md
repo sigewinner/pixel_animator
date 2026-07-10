@@ -2,6 +2,18 @@
 
 本文件记录 Pixel Animator 各版本的更新内容。
 
+## v32.9 — 关闭画布导致其余画布画面消失 / 无法绘图（关键修复）（2026-07-10）
+
+### 🐛 修复：关闭任一画布后，另一个画布画面消失且无法绘图
+- **根因**：全局唯一的 `#canvasWrap`（内含 `#drawCanvas`）始终位于「当前活动窗口」的 `.win-active-area` 内。当用户关闭的恰好是**当前活动画布**时，`WindowManager.destroyWindow` 执行 `win.el.remove()` 会把含 `canvasWrap` 的活动窗口整棵从文档摘除，导致 `canvasWrap` / `#drawCanvas` 被永久 orphan。此后的 `moveCanvasToActiveWindow` / `ensureCanvasInActiveWindow`（自愈守护）都因 `document.getElementById('canvasWrap')` 返回 `null` 而跳过 → 画布**永久脱离 DOM**（画面消失），且 `#drawCanvas` 不在文档中（无法绘图）。该缺陷同样存在于 `rebuildAllWindows`（恢复 / 加载项目时移除全部窗口）。
+- **修复**（`window-manager.js`）：
+  - `destroyWindow`：在 `win.el.remove()` **之前**，若 `canvasWrap` / `cropBar` 位于被关闭窗口内，先 `appendChild` 移回隐藏的 `#canvasWrapTemplate`（仍在文档中、不会被摘除）；随后由 `moveCanvasToActiveWindow` / 自愈守护重新挂回活动窗口。
+  - `rebuildAllWindows`：移除全部窗口前同样先把 `canvasWrap` / `cropBar` 移回 `#canvasWrapTemplate`。
+  - 这样即便被关闭的是活动窗口，画布也始终留在文档内，关闭后立即可见、可继续绘制；且自愈 500ms 兜底在元素未 null 时也能正常生效。
+- **验证（puppeteer + Edge 实机）**：
+  - 复现确认（修复前）：关闭活动画布后 `canvasWrapExists=false`、`drawCanvasInDom=false`、`drawOk=false`、`enginePixelsNonEmpty=true`（数据在内存但画布已脱档）。
+  - 修复后覆盖场景：① 关闭活动画布 → `canvasWrap` 在活动区、`drawOk=true`；② 关闭非活动画布 → 无回归；③ 3 画布逐次关闭到仅剩 1 个 → 始终 `drawOk=true`、像素保留。`ERRORS: (none)`。
+
 ## v32.8 — 自由绘制断线修复（连笔插值）（2026-07-10）
 
 ### ✏️ 修复：快速拖动绘制出现断点 / 虚线（断断续续）
