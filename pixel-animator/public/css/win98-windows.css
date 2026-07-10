@@ -369,17 +369,7 @@
 
 /* ===== Minimized State ===== */
 .canvas-window.minimized {
-  min-height: 0 !important;
-  height: 32px !important;
-  min-width: 180px !important;
-  overflow: auto;
-  border-radius: 4px;
-  resize: none;
-}
-
-.canvas-window.minimized .win-body,
-.canvas-window.minimized .win-statusbar,
-.canvas-window.minimized .win-resize-handle {
+  /* 最小化：直接从画面消失，仅任务栏按钮保留（与系统窗体行为一致） */
   display: none !important;
 }
 

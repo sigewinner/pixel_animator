@@ -370,6 +370,12 @@
     var win = getWindowById(winId);
     if (!win) return;
 
+    // 已最大化 -> 点击切换回还原（与系统窗体一致）
+    if (win.state === 'maximized') {
+      WindowManager.restoreWindow(winId);
+      return;
+    }
+
     // Save bounds if currently normal
     if (win.state === 'normal') {
       win.prevBounds = {
@@ -384,6 +390,10 @@
     win.state = 'maximized';
     win.el.classList.add('maximized');
     win.el.classList.remove('minimized');
+
+    // 最大化按钮切换为「还原」图标（与系统窗体一致）
+    var maxBtnEl = win.el.querySelector('.win-ctrl-maximize');
+    if (maxBtnEl) { maxBtnEl.classList.add('is-max'); maxBtnEl.innerHTML = '&#10065;'; }
 
     // Activate when maximizing
     WindowManager.activateWindow(winId);
@@ -404,6 +414,10 @@
     win.state = 'normal';
     win.el.classList.remove('minimized');
     win.el.classList.remove('maximized');
+
+    // 还原时，最大化按钮恢复为「最大化」图标
+    var maxBtnEl = win.el.querySelector('.win-ctrl-maximize');
+    if (maxBtnEl) { maxBtnEl.classList.remove('is-max'); maxBtnEl.innerHTML = '&#9724;'; }
 
     // Restore saved bounds
     if (win.prevBounds) {
