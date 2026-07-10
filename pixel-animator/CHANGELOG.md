@@ -105,5 +105,26 @@
 
 ---
 
+## v32.6 — 任务栏打开 / 最大化返回动画强化（2026-07-10）
+
+### 🎬 从底端任务栏打开画布的动画
+- **修复：从任务栏点击恢复最小化窗口时缺少明确的「展开」动画**
+  - 原因：`restoreWindow` 在 `win.state==='minimized'` 时仅加了 `animating-geometry`（几何不变，无实际效果），展开仅依赖基类 `transition: opacity/transform` 的淡入，无「从任务栏弹出」的观感。
+  - 修复（`window-manager.js` + `win98-windows.css`）：新增 `animating-open` + keyframe `winOpenFromTaskbar`，窗口从「任务栏底部缩放回弹」展开（`opacity 0→1`、`transform scale(0.08)→1` + `translateY(220px)→0`），动画结束自动清理 class。
+
+### ↩️ 再次点击最大化后的返回动画
+- **修复：最大化后再次点击最大化按钮「还原」时窗口瞬间跳变，没有过渡**
+  - 原因：① `restoreWindow` 从 `maximized` 恢复时根本没加 `animating-geometry`，因此无过渡；② `.maximized` 用 `width:100% !important`，与 `prevBounds` 的像素值是「`%` ↔ `px`」——CSS 无法在两种单位间插值，导致还原瞬间跳变。
+  - 修复：
+    - `window-manager.js`：最大化时改为用像素**内联**设置几何（`left/top/0`，宽高 = `desktop-area` 的 `clientWidth/clientHeight`），`restoreWindow` 从 `maximized` 恢复时补加 `animating-geometry`。
+    - `win98-windows.css`：`.maximized` 去掉 `top/left/width/height` 的 `% !important`（仅保留圆角/边框/阴影标记），几何全部交由 JS 以像素驱动；`.canvas-window` 基类 `transition` 移除 `opacity/transform`（改由 keyframe 显式驱动，避免与展开动画冲突）。
+
+### ✅ 验证（puppeteer + Edge 实机）
+- 从任务栏打开：`animating-open` 播放中 `opacity` 0 → 0.79 → 1，动画结束 class 自动清除、`minimized` 移除。
+- 最大化：几何宽度动画中采样 `701px`（介于 586 ↔ 738），平滑放大。
+- 再次点击最大化返回：几何宽度动画中采样 `616px`（介于 738 ↔ 586），**平滑过渡、无跳变**。
+
+---
+
 ## 历史版本
 - 早期版本（GitHub `main`，2026-07-09 之前）：基础单画布编辑器，含绘制、图层、时间轴、洋葱皮、GIF 导出、作品库画廊。

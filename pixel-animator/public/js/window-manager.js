@@ -344,6 +344,7 @@
     win.state = 'minimized';
     win.el.classList.add('minimized');
     win.el.classList.remove('maximized');
+    win.el.classList.add('animating-minimize');
 
     // Remove active if this was active
     if (activeWinId === winId) {
@@ -359,6 +360,10 @@
 
     // Update taskbar button
     updateTaskbarButton(win);
+
+    setTimeout(function() {
+      win.el.classList.remove('animating-minimize');
+    }, 280);
   };
 
   WindowManager.maximizeWindow = function(winId) {
@@ -386,6 +391,15 @@
     win.el.classList.add('maximized');
     win.el.classList.remove('minimized');
 
+    // 以像素内联设置几何（填满 desktop-area），保证最大化<->还原均为 px 平滑过渡
+    var par = win.el.parentElement;
+    var parW = par ? par.clientWidth : (win.el.offsetParent ? win.el.offsetParent.clientWidth : window.innerWidth);
+    var parH = par ? par.clientHeight : (win.el.offsetParent ? win.el.offsetParent.clientHeight : window.innerHeight);
+    win.el.style.left = '0px';
+    win.el.style.top = '0px';
+    win.el.style.width = Math.round(parW) + 'px';
+    win.el.style.height = Math.round(parH) + 'px';
+
     // 最大化按钮切换为「还原」图标（与系统窗体一致）
     var maxBtnEl = win.el.querySelector('.win-ctrl-maximize');
     if (maxBtnEl) { maxBtnEl.classList.add('is-max'); maxBtnEl.innerHTML = '&#10065;'; }
@@ -403,6 +417,10 @@
     if (!win) return;
 
     if (win.state === 'minimized') {
+      // 从任务栏打开：从底部缩放回弹展开
+      win.el.classList.add('animating-open');
+    } else {
+      // 从最大化返回：几何 px 过渡（修复「再次点击最大化返回」瞬间跳变）
       win.el.classList.add('animating-geometry');
     }
 
@@ -430,7 +448,8 @@
 
     setTimeout(function() {
       win.el.classList.remove('animating-geometry');
-    }, 220);
+      win.el.classList.remove('animating-open');
+    }, 320);
   };
 
   WindowManager.updateWindowTitle = function(winId, name) {

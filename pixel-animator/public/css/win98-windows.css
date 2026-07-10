@@ -33,7 +33,7 @@
     inset -1px -1px 0 rgba(160, 170, 190, 0.5);
   background: linear-gradient(180deg, #f8faff 0%, #f0f4fa 100%);
   overflow: auto;
-  transition: box-shadow 0.15s ease, opacity 0.22s ease, transform 0.22s ease;
+  transition: box-shadow 0.15s ease;
 }
 
 .canvas-window.active {
@@ -369,8 +369,8 @@
 
 /* ===== Minimized State ===== */
 .canvas-window.minimized {
-  /* 最小化：淡出并缩向任务栏方向，结束后不可见且不可交互；
-     仍保留在 DOM 中，以便平滑动画与点击任务栏恢复（替代 display:none 以支持过渡） */
+  /* 最小化静止态：淡出并缩向任务栏方向，不可见且不可交互；
+     仍保留在 DOM 中，由 animating-minimize / animating-open keyframe 驱动过渡 */
   opacity: 0;
   transform: scale(0.08) translateY(220px);
   transform-origin: center bottom;
@@ -379,10 +379,9 @@
 
 /* ===== Maximized State ===== */
 .canvas-window.maximized {
-  top: 0 !important;
-  left: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+  /* 几何尺寸由 JS 以像素内联设置（left/top/width/height），
+     以保证「最大化 <-> 还原」均为 px<->px 平滑插值
+     （原先 width:100%!important 与 prevBounds 的 px 之间无法插值，导致还原瞬间跳变） */
   border-radius: 0 !important;
   box-shadow: none !important;
   border: 2px solid #7a8db0 !important;
@@ -603,6 +602,24 @@
    仅在动画期间给 left/top/width/height 加上过渡，避免拖拽/缩放时窗口“粘滞”跟随。 */
 .canvas-window.animating-geometry {
   transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease, box-shadow 0.15s ease;
+}
+
+/* ===== Minimize / Open (from taskbar) keyframe animations =====
+   用 keyframe 显式驱动 opacity + transform，避免依赖基类 transition 产生不一致；
+   animating-open 让窗口「从任务栏底部缩放回弹」展开 */
+@keyframes winMinimize {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 0; transform: scale(0.08) translateY(220px); }
+}
+@keyframes winOpenFromTaskbar {
+  from { opacity: 0; transform: scale(0.08) translateY(220px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.canvas-window.animating-minimize {
+  animation: winMinimize 0.26s ease forwards;
+}
+.canvas-window.animating-open {
+  animation: winOpenFromTaskbar 0.3s cubic-bezier(0.2, 0.8, 0.25, 1) forwards;
 }
 
 /* ===== Window drag outline (ghost) ===== */
