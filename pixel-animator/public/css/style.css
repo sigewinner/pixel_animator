@@ -874,6 +874,12 @@ body.editor {
   font-size: 12px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#canvasInfo {
+  display: inline-block;
+  min-width: 80px;
+  text-align: left;
 }
 .zoom-control {
   display: flex;
