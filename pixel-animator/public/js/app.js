@@ -1092,11 +1092,23 @@
     });
 
     var onionBtn = document.getElementById('btnOnion');
+    var onionControl = document.getElementById('onionControl');
+    var onionAlphaSlider = document.getElementById('onionAlphaSlider');
+    var onionAlphaLabel = document.getElementById('onionAlphaLabel');
     onionBtn.addEventListener('click', function(e) {
       var on = anim.toggleOnionSkin();
       this.classList.toggle('active', on);
+      onionControl.style.display = on ? 'block' : 'none';
+      if (on) engine.setOnionAlpha(parseInt(onionAlphaSlider.value) / 100);
     });
     onionBtn.classList.toggle('active', anim.onionSkin);
+    if (anim.onionSkin) onionControl.style.display = 'block';
+
+    onionAlphaSlider.addEventListener('input', function() {
+      var a = parseInt(onionAlphaSlider.value);
+      onionAlphaLabel.textContent = a + '%';
+      engine.setOnionAlpha(a / 100);
+    });
   }
 
   // ---- 导出与保存 ----

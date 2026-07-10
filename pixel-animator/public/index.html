@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body class="editor">
 
@@ -275,6 +275,14 @@
           </button>
           <button class="action-btn" id="btnOnion">洋葱皮</button>
         </div>
+        <div class="onion-control" id="onionControl" style="display:none; margin-top:8px;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text,#333);">
+            <span style="color:#ff3b30;">●前</span>
+            <span style="color:#0a84ff;">●后</span>
+            <input type="range" id="onionAlphaSlider" min="5" max="80" value="30" style="flex:1; accent-color:var(--primary,#4a7fff);">
+            <span id="onionAlphaLabel">30%</span>
+          </label>
+        </div>
         <div class="fps-control">
           <label>速度</label>
           <input type="range" id="fpsSlider" min="1" max="24" value="12">
@@ -539,11 +547,11 @@
 
   <script src="lib/gif.js/gif.js"></script>
   <script src="js/auth.js?v=7"></script>
-  <script src="js/canvas-engine.js?v=8"></script>
+  <script src="js/canvas-engine.js?v=9"></script>
   <script src="js/animation.js?v=7"></script>
   <script src="js/color-wheel.js?v=7"></script>
   <script src="js/layer-system.js?v=7"></script>
-  <script src="js/app.js?v=8"></script>
+  <script src="js/app.js?v=9"></script>
   <script src="js/video-import.js?v=7"></script>
   <script src="js/sound.js?v=7"></script>
   <script>

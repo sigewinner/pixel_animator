@@ -74,8 +74,13 @@ class Animation {
   }
 
   _renderOnion() {
-    const onionFrame = (this.onionSkin && this.current > 0) ? this.frames[this.current - 1] : null;
-    this.engine.setOnionFrame(onionFrame);
+    if (!this.onionSkin) {
+      this.engine.setOnion(null, null);
+      return;
+    }
+    const prev = (this.current > 0) ? this.frames[this.current - 1] : null;
+    const next = (this.current < this.frames.length - 1) ? this.frames[this.current + 1] : null;
+    this.engine.setOnion(prev, next);
   }
 
   toggleOnionSkin() {

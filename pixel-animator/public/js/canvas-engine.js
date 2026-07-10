@@ -35,7 +35,9 @@ class CanvasEngine {
     this.lastDrawX = -1;
     this.lastDrawY = -1;
 
-    this.onionFrame = null;
+    this.onionPrev = null;
+    this.onionNext = null;
+    this.onionAlpha = 0.3;
 
     // ★★★ 绘制完成回调 ★★★
     this.onDrawEnd = null;
@@ -110,9 +112,15 @@ class CanvasEngine {
     if (this.onRotationChange) this.onRotationChange(this.rotation);
   }
 
-  setOnionFrame(frame) {
-    this.onionFrame = frame;
+  // 洋葱皮：prev=前一帧(红) next=后一帧(蓝)，均为扁平像素数组或 null
+  setOnion(prev, next) {
+    this.onionPrev = prev || null;
+    this.onionNext = next || null;
     this.render();
+  }
+  setOnionAlpha(a) {
+    this.onionAlpha = a;
+    if (this.onionPrev || this.onionNext) this.render();
   }
 
   _updateCursor() {
@@ -174,7 +182,8 @@ class CanvasEngine {
     this.future = [];
     this.lastDrawX = -1;
     this.lastDrawY = -1;
-    this.onionFrame = null;
+    this.onionPrev = null;
+    this.onionNext = null;
     this._updateCursor();
     this.render();
   }
@@ -217,7 +226,8 @@ class CanvasEngine {
     this.hasCropSelection = false;
     this.lastDrawX = -1;
     this.lastDrawY = -1;
-    this.onionFrame = null;
+    this.onionPrev = null;
+    this.onionNext = null;
     this._updateCursor();
     this.render();
   }
@@ -506,10 +516,9 @@ class CanvasEngine {
     }
   }
 
-  render(onionFrame = null) {
+  render() {
     const ctx = this.ctx;
     const ps = this.pixelSize;
-    const onion = (onionFrame !== null) ? onionFrame : this.onionFrame;
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -522,14 +531,23 @@ class CanvasEngine {
       }
     }
 
-    if (onion) {
-      ctx.globalAlpha = 0.25;
-      for (let y = 0; y < this.height; y++) {
-        for (let x = 0; x < this.width; x++) {
-          const c = onion[y * this.width + x];
-          if (c) {
-            ctx.fillStyle = c;
-            ctx.fillRect(x * ps, y * ps, ps, ps);
+    if (this.onionPrev || this.onionNext) {
+      const a = this.onionAlpha;
+      if (this.onionPrev) {
+        ctx.globalAlpha = a;
+        ctx.fillStyle = '#ff3b30';
+        for (let y = 0; y < this.height; y++) {
+          for (let x = 0; x < this.width; x++) {
+            if (this.onionPrev[y * this.width + x]) ctx.fillRect(x * ps, y * ps, ps, ps);
+          }
+        }
+      }
+      if (this.onionNext) {
+        ctx.globalAlpha = a;
+        ctx.fillStyle = '#0a84ff';
+        for (let y = 0; y < this.height; y++) {
+          for (let x = 0; x < this.width; x++) {
+            if (this.onionNext[y * this.width + x]) ctx.fillRect(x * ps, y * ps, ps, ps);
           }
         }
       }
