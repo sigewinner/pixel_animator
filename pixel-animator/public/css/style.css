@@ -41,10 +41,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-deep);
+  background-color: var(--bg-deep);
   background-image:
-    radial-gradient(ellipse at 20% 20%, rgba(139,92,246,0.12) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(56,189,248,0.10) 0%, transparent 50%);
+    linear-gradient(rgba(13,14,26,0.55), rgba(13,14,26,0.55)),
+    url("../img/微信图片_20260709152152_2_3.jpg");
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   padding: 20px;
   overflow: hidden;
   position: relative;
