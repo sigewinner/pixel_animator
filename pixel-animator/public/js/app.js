@@ -357,6 +357,7 @@
     bindColorWheel();
     bindPaletteActions();
     bindZoom();
+    bindRotation();
 
     var fitModeSelect = document.getElementById('fitMode');
     if (fitModeSelect) fitModeSelect.value = 'contain';
@@ -1672,6 +1673,36 @@
     document.getElementById('btnZoomIn').addEventListener('click', function() { setZoom(zoomLevel * 1.5); });
     document.getElementById('btnZoomOut').addEventListener('click', function() { setZoom(zoomLevel / 1.5); });
     document.getElementById('btnZoomFit').addEventListener('click', function() { setZoom(1.0); });
+  }
+
+  // ★★★ 画布旋转（视图变换，不影响像素数据） ★★★
+  function bindRotation() {
+    var btnL = document.getElementById('btnRotL');
+    var btnR = document.getElementById('btnRotR');
+    var btnReset = document.getElementById('btnRotReset');
+    var slider = document.getElementById('rotSlider');
+    var label = document.getElementById('rotLabel');
+
+    function updateRotUI(deg) {
+      var d = ((Math.round(deg) % 360) + 360) % 360;
+      if (label) label.textContent = d + '°';
+      if (slider && Number(slider.value) !== d) slider.value = d;
+    }
+
+    engine.onRotationChange = updateRotUI;
+
+    if (btnL) btnL.addEventListener('click', function() {
+      engine.setRotation(engine.rotation - 90);
+    });
+    if (btnR) btnR.addEventListener('click', function() {
+      engine.setRotation(engine.rotation + 90);
+    });
+    if (btnReset) btnReset.addEventListener('click', function() {
+      engine.setRotation(0);
+    });
+    if (slider) slider.addEventListener('input', function() {
+      engine.setRotation(Number(slider.value));
+    });
   }
 
   function setZoom(z) {

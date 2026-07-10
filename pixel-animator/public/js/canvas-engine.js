@@ -16,6 +16,7 @@ class CanvasEngine {
     this.color = '#000000';
     this.isDrawing = false;
     this.showGrid = true;
+    this.rotation = 0; // 画布旋转角度（视图变换，不破坏像素数据）
     this.eraserSize = 3;
     this.penSize = 1;
 
@@ -98,6 +99,15 @@ class CanvasEngine {
     this.canvas.height = this.height * size;
     this._updateCursor();
     this.render();
+  }
+
+  // 旋转画布（视图变换，不修改像素数据）。deg 为绝对角度，可累积
+  setRotation(deg) {
+    this.rotation = ((Math.round(deg) % 360) + 360) % 360;
+    this.canvas.style.transformOrigin = 'center center';
+    this.canvas.style.transform = `rotate(${this.rotation}deg)`;
+    this._updateCursor();
+    if (this.onRotationChange) this.onRotationChange(this.rotation);
   }
 
   setOnionFrame(frame) {
@@ -218,10 +228,24 @@ class CanvasEngine {
 
   _getPixelCoord(e) {
     const rect = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
-    const px = Math.floor((e.clientX - rect.left) * scaleX / this.pixelSize);
-    const py = Math.floor((e.clientY - rect.top) * scaleY / this.pixelSize);
+    // 旋转后 getBoundingClientRect 返回的是旋转包围盒，但中心不变：用包围盒中心即元素中心
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    // offsetWidth/offsetHeight 是未受 transform 影响的真实显示尺寸
+    const dispW = this.canvas.offsetWidth || rect.width;
+    const dispH = this.canvas.offsetHeight || rect.height;
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    // 撤销 CSS 旋转（rotate 顺时针 θ → 反向旋转 −θ 还原到显示坐标）
+    const r = this.rotation * Math.PI / 180;
+    const cos = Math.cos(r), sin = Math.sin(r);
+    const vx = dx * cos + dy * sin;
+    const vy = -dx * sin + dy * cos;
+    // 显示坐标 → 内部像素坐标（考虑 max-width/max-height 的 CSS 缩放）
+    const ux = vx * (this.canvas.width / dispW);
+    const uy = vy * (this.canvas.height / dispH);
+    const px = Math.floor((ux + this.canvas.width / 2 - this.pixelSize / 2) / this.pixelSize);
+    const py = Math.floor((uy + this.canvas.height / 2 - this.pixelSize / 2) / this.pixelSize);
     return { x: Math.max(0, Math.min(this.width - 1, px)), y: Math.max(0, Math.min(this.height - 1, py)) };
   }
 
