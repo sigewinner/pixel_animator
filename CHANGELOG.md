@@ -2,6 +2,13 @@
 
 本文件记录 Pixel Animator 各版本的更新内容。
 
+## v32.1 — 画布挂载回归修复（2026-07-10）
+
+- **修复：选中画布即丢失画面、无法绘图（回归）**
+  - 背景：本应已修复的画布挂载问题在一次目录内容覆盖操作中被旧版本代码回退——`app.js` 重新出现了 `wrapTemplate.removeChild(canvasWrap)` 以及 `init()` 收尾处错误的 `frames.length === 0` 判断，导致 `drawCanvas` 再次被从文档摘除、初始帧数据未加载。
+  - 修复：重新移除 `removeChild(canvasWrap)`（改由 `moveCanvasToActiveWindow` 通过 `appendChild` 把 `canvasWrap` 从隐藏模板移入活动窗口）；并将 `loadTabState` 的触发条件改回「引擎尚未加载过帧数据（`!engine.getFrameData()`）」。
+  - 验证：puppeteer + Edge 实机测试确认——首屏 `drawCanvas` 即挂在活动窗口且可见；在 1 号画布绘制后切到 2 号再切回，1 号画布内容（红色像素）完好保留且仍可继续绘制；无 JS 报错。
+
 ## v32 — 多画布系统 + 关键 Bug 修复（2026-07-09）
 
 ### ✨ 新增功能

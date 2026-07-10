@@ -13,10 +13,6 @@
   var canvasTabs = [];
   var activeTabIndex = 0;
 
-  // ---- 缓存的可编辑画布容器引用（避免被移出文档后 getElementById 失效）----
-  var canvasWrapEl = null;
-  var cropBarEl = null;
-
   // ---- WindowManager 辅助函数 ----
   function getViewportEl() {
     if (typeof WindowManager !== 'undefined' && WindowManager.getActiveBodyEl) {
@@ -34,12 +30,12 @@
     var bodyEl = winObj.el.querySelector('.win-active-area');
     if (!bodyEl) return;
 
-    var wrap = canvasWrapEl || document.getElementById('canvasWrap');
+    var wrap = document.getElementById('canvasWrap');
     if (wrap && wrap.parentElement !== bodyEl) {
       bodyEl.appendChild(wrap);
     }
 
-    var cropBar = cropBarEl || document.getElementById('cropBar');
+    var cropBar = document.getElementById('cropBar');
     if (cropBar && cropBar.parentElement !== bodyEl) {
       bodyEl.appendChild(cropBar);
     }
@@ -852,15 +848,9 @@
     engine = new CanvasEngine(canvas, canvasW, canvasH, basePixelSize);
     anim = new Animation(engine, canvasW, canvasH);
 
-    // ★★★ 撤销/重做快照钩子 ★★★
-    // 落笔前（onDrawStart）：此时 anim.frames 仍是操作前状态，压入撤销栈
-    engine.onDrawStart = function() {
-      pushSnapshot();
-    };
-    // 抬笔后（onDrawEnd）：把实时绘制的像素同步回 anim.frames 的当前帧，
-    // 供下一次落笔前的快照使用，并更新非活动窗口预览
+    // ★★★ 绘制完成时同步帧 + 保存快照 + 更新窗口预览 ★★★
     engine.onDrawEnd = function() {
-      anim.syncCurrentFrame();
+      pushSnapshot();
       renderInactiveWindowPreviews();
     };
 
@@ -976,11 +966,7 @@
     await loadProject();
     setWrapSize();
 
-    // 确保引擎已加载当前画布的帧数据。
-    // 重要：createCanvasTab 已为画布预置了 frames（长度 1），所以原先的
-    // “frames.length === 0” 判断永远为假，导致全新项目时 loadTabState 从未被调用，
-    // engine.frameData 始终为 null —— 绘制无法持久化，一切换画布当前内容即被清空。
-    // 改为：只要引擎还没加载过帧数据（frameData 为 null）就加载一次。
+    // 如果没有加载到项目，确保第一个标签有空白帧，并且引擎已加载帧
     if (canvasTabs.length > 0 && !engine.getFrameData()) {
       if (canvasTabs[activeTabIndex].frames.length === 0) {
         canvasTabs[activeTabIndex].frames = [LayerUtils.createFrame(canvasW, canvasH, 'Background')];
@@ -998,12 +984,11 @@
         WindowManager.init(desktop, taskbar);
       }
 
-      // 从模板中取出 canvasWrap（仅隐藏模板，不要 removeChild 摘离文档，
-      // 否则 moveCanvasToActiveWindow 里的 getElementById 会找不到它）
-      var wrapTemplate = document.getElementById('canvasWrapTemplate');
-      canvasWrapEl = document.getElementById('canvasWrap');
-      cropBarEl = document.getElementById('cropBar');
-      if (wrapTemplate) wrapTemplate.style.display = 'none';
+      // canvasWrap 保留在隐藏的 #canvasWrapTemplate 中，稍后由
+      // moveCanvasToActiveWindow 通过 appendChild 移动到活动窗口。
+      // 注意：千万不要用 removeChild 把它从 DOM 摘除——否则
+      // document.getElementById('canvasWrap') 会返回 null，导致画布
+      // 永远无法重新挂回窗口（表现为“选中画布即丢失画面、无法绘图”）。
 
       // 隐藏旧的 viewport / tabBar
       var vp = document.getElementById('canvasViewport');
