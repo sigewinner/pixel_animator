@@ -620,7 +620,8 @@
     addBtn.addEventListener('click', function() {
       if (WindowManager.onAddCanvas) WindowManager.onAddCanvas();
     });
-    taskbarEl.appendChild(addBtn);
+    // 固定到最左边：插入为第一个子元素（始终位于画布按钮之前）
+    taskbarEl.insertBefore(addBtn, taskbarEl.firstChild);
   }
 
   // ---- Drag ----

@@ -23,6 +23,7 @@
   - 修复：落笔时（`onDown`）触发 `onDrawStart` 压入「操作前」快照，抬笔时（`onUp`）同步实时像素回 `frameData` 并触发 `onDrawEnd` 把结果写回 `anim.frames`，使每笔都能逐步撤销 / 重做。
 
 ### 🔧 其他
+- 任务栏「新建画布」按钮固定到最左侧，并随横向滚动保持钉住（`position: sticky`）。
 - 服务器端口改为读取环境变量（`process.env.PORT || 3000`），避免与本地其他服务冲突。
 - 移除调试用的 `window.__PA` 钩子。
 
