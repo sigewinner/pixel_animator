@@ -899,7 +899,26 @@ body.editor {
   padding: 0;
 }
 .zoom-btn:hover { border-color: var(--primary); color: var(--primary); }
-#zoomLevel { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+#zoomLevel.zoom-input {
+  width: 46px;
+  height: 26px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 5px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  outline: none;
+}
+#zoomLevel.zoom-input:focus { border-color: var(--primary); }
+#zoomLevel.zoom-input::-webkit-outer-spin-button,
+#zoomLevel.zoom-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.zoom-suffix { font-size: 12px; color: var(--text-muted); margin-left: -2px; }
 .canvas-wrap {
   background: var(--surface);
   padding: 16px;

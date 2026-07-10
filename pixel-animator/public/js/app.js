@@ -1709,6 +1709,26 @@
     document.getElementById('btnZoomIn').addEventListener('click', function() { setZoom(zoomLevel * 1.5); });
     document.getElementById('btnZoomOut').addEventListener('click', function() { setZoom(zoomLevel / 1.5); });
     document.getElementById('btnZoomFit').addEventListener('click', function() { setZoom(1.0); });
+
+    var input = document.getElementById('zoomLevel');
+    if (input) {
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          var pct = parseFloat(this.value.replace(/[^0-9.\-]/g, ''));
+          if (!isNaN(pct)) setZoom(pct / 100);
+          this.blur();
+        } else if (e.key === 'Escape') {
+          updateZoomLabel();
+          this.blur();
+        }
+      });
+      input.addEventListener('blur', function() {
+        var pct = parseFloat(this.value.replace(/[^0-9.\-]/g, ''));
+        if (!isNaN(pct)) setZoom(pct / 100);
+        else updateZoomLabel();
+      });
+      input.addEventListener('focus', function() { this.select(); });
+    }
   }
 
   // ★★★ 画布旋转（视图变换，不影响像素数据） ★★★
@@ -1806,7 +1826,8 @@
 
   function updateZoomLabel() {
     var el = document.getElementById('zoomLevel');
-    if (el) el.textContent = Math.round(zoomLevel * 100) + '%';
+    if (!el) return;
+    if (document.activeElement !== el) el.value = Math.round(zoomLevel * 100);
   }
 
   function bindCrop() {

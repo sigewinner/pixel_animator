@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
-  <link rel="stylesheet" href="css/style.css?v=10">
+  <link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body class="editor">
 
@@ -252,7 +252,8 @@
           </div>
           <div class="zoom-control">
             <button class="zoom-btn" id="btnZoomOut" title="缩小">−</button>
-            <span id="zoomLevel">100%</span>
+            <input type="number" id="zoomLevel" class="zoom-input" value="100" min="25" max="600" step="1" title="输入缩放百分比后按回车">
+            <span class="zoom-suffix">%</span>
             <button class="zoom-btn" id="btnZoomIn" title="放大">+</button>
             <button class="zoom-btn" id="btnZoomFit" title="适应窗口">适应</button>
           </div>
@@ -573,7 +574,7 @@
   <script src="js/animation.js?v=7"></script>
   <script src="js/color-wheel.js?v=7"></script>
   <script src="js/layer-system.js?v=7"></script>
-  <script src="js/app.js?v=10"></script>
+  <script src="js/app.js?v=11"></script>
   <script src="js/video-import.js?v=7"></script>
   <script src="js/sound.js?v=7"></script>
   <script>
