@@ -47,6 +47,14 @@ class CanvasEngine {
     this.onDrawStart = null;
     this.onColorPick = null;
 
+    // 图层绘制支持：绘制直接作用于"活动图层"像素缓冲，
+    // 再通过 compositeFn 合成到 this.pixels（显示缓冲）。
+    this.activeLayer = null;        // 当前图层的像素缓冲（绘制目标）
+    this.compositeFn = null;        // (activeBuffer) => 合成像素
+    this._previewMode = false;      // 预览阶段：直接绘制到合成图（预览用）
+    this.activeLayerLocked = false; // 当前图层是否被锁定
+    this.previewEnd = null;         // 预览工具（线/圆）的终点坐标
+
     this._bindEvents();
     this._updateCursor();
   }
@@ -75,6 +83,28 @@ class CanvasEngine {
 
   getPixels() {
     return this.pixels.slice();
+  }
+
+  // ---- 图层绘制支持 ----
+  setActiveLayer(buffer) {
+    this.activeLayer = buffer;
+  }
+
+  setCompositeFn(fn) {
+    this.compositeFn = fn;
+  }
+
+  // 当前绘制目标：预览阶段画到合成图，否则画到活动图层缓冲
+  _paintTarget() {
+    if (this._previewMode) return this.pixels;
+    return this.activeLayer || this.pixels;
+  }
+
+  // 用活动图层重新合成显示缓冲
+  _recomposite() {
+    if (this.compositeFn) {
+      this.pixels = this.compositeFn();
+    }
   }
 
   setTool(tool) {
@@ -246,6 +276,11 @@ class CanvasEngine {
       e.preventDefault();
       const { x, y } = this._getPixelCoord(e);
 
+      // 锁定图层保护：绘制类工具在锁定图层上无效（吸管/裁剪仍可操作）
+      if (this.activeLayerLocked && (this.tool === 'pencil' || this.tool === 'eraser' || this.tool === 'fill' || this.tool === 'line' || this.tool === 'circle' || this.tool === 'shape')) {
+        return;
+      }
+
       // 裁剪工具
       if (this.tool === 'crop') {
         this.isDrawing = true;
@@ -270,6 +305,7 @@ class CanvasEngine {
       // ★★★ 图形工具 - 记录起点 ★★★
       if (this.tool === 'shape') {
         this.isDrawing = true;
+        this._previewMode = true;
         this.shapeStart = { x, y };
         this.shapeSnapshot = this.pixels.slice();
         if (this.onDrawStart) this.onDrawStart();
@@ -279,7 +315,9 @@ class CanvasEngine {
       // 线条/圆形工具（预览模式）
       if (this.tool === 'line' || this.tool === 'circle') {
         this.isDrawing = true;
+        this._previewMode = true;
         this.previewStart = { x, y };
+        this.previewEnd = { x, y };
         this.previewSnapshot = this.pixels.slice();
         return;
       }
@@ -291,6 +329,8 @@ class CanvasEngine {
       this.lastDrawY = -1;
       if (this.onDrawStart) this.onDrawStart();
       this._applyTool(x, y);
+      this._recomposite();
+      this.render();
       this.lastDrawX = x;
       this.lastDrawY = y;
     };
@@ -322,6 +362,7 @@ class CanvasEngine {
 
       // 线条工具
       if (this.tool === 'line') {
+        this.previewEnd = { x, y };
         this.pixels = this.previewSnapshot.slice();
         this._drawLinePixels(this.previewStart.x, this.previewStart.y, x, y, this.color);
         this.render();
@@ -330,6 +371,7 @@ class CanvasEngine {
 
       // 圆形工具
       if (this.tool === 'circle') {
+        this.previewEnd = { x, y };
         this.pixels = this.previewSnapshot.slice();
         const r = Math.round(Math.hypot(x - this.previewStart.x, y - this.previewStart.y));
         this._drawCirclePixels(this.previewStart.x, this.previewStart.y, r, this.color);
@@ -345,6 +387,7 @@ class CanvasEngine {
       }
       this.lastDrawX = x;
       this.lastDrawY = y;
+      this._recomposite();
       this.render();
     };
 
@@ -363,39 +406,51 @@ class CanvasEngine {
         return;
       }
 
-      // ★★★ 图形工具 - 完成绘制 ★★★
+      // ★★★ 图形工具 - 完成绘制（落笔到活动图层） ★★★
       if (this.tool === 'shape' && this.isDrawing && this.shapeStart) {
         const { x, y } = this._lastMousePos;
         const dx = Math.abs(x - this.shapeStart.x);
         const dy = Math.abs(y - this.shapeStart.y);
-        
+
+        this.isDrawing = false;
+        this._previewMode = false;
+        this._recomposite(); // 清除预览笔迹
+
         if (dx > 0 || dy > 0) {
-          this.pushHistory();
-          this.pixels = this.shapeSnapshot.slice();
           this._drawShapeOutline(this.shapeStart.x, this.shapeStart.y, x, y, this.color);
-          if (this.onDrawEnd) {
-            this.onDrawEnd(this.pixels.slice());
-          }
         } else {
           // 点击没有拖动，画一个点
-          this.pixels = this.shapeSnapshot.slice();
           this._drawDot(this.shapeStart.x, this.shapeStart.y, this.color);
-          if (this.onDrawEnd) {
-            this.onDrawEnd(this.pixels.slice());
-          }
         }
-        this.isDrawing = false;
+        this._recomposite();
         this.shapeStart = null;
         this.shapeSnapshot = null;
+        if (this.onDrawEnd) {
+          this.onDrawEnd(this.pixels.slice());
+        }
         this.render();
         return;
       }
 
-      // 线条/圆形工具 - 完成绘制
+      // 线条/圆形工具 - 完成绘制（落笔到活动图层）
       if ((this.tool === 'line' || this.tool === 'circle') && this.isDrawing) {
         this.isDrawing = false;
+        this._previewMode = false;
+        this._recomposite(); // 清除预览笔迹
+        const start = this.previewStart;
+        const end = this.previewEnd || this._lastMousePos;
+        if (start) {
+          if (this.tool === 'line') {
+            this._drawLinePixels(start.x, start.y, end.x, end.y, this.color);
+          } else {
+            const r = Math.round(Math.hypot(end.x - start.x, end.y - start.y));
+            this._drawCirclePixels(start.x, start.y, r, this.color);
+          }
+          this._recomposite();
+        }
         this.previewStart = null;
         this.previewSnapshot = null;
+        this.previewEnd = null;
         this.lastDrawX = -1;
         this.lastDrawY = -1;
         if (this.onDrawEnd) {
@@ -466,6 +521,7 @@ class CanvasEngine {
   _drawDot(x, y, color) {
     const size = this.penSize;
     const radius = Math.floor(size / 2);
+    const buf = this._paintTarget();
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         if (dx * dx + dy * dy <= radius * radius + 0.5) {
@@ -473,7 +529,7 @@ class CanvasEngine {
           const py = y + dy;
           if (px >= 0 && px < this.width && py >= 0 && py < this.height) {
             const i = this._idx(px, py);
-            this.pixels[i] = color;
+            buf[i] = color;
           }
         }
       }
@@ -482,14 +538,16 @@ class CanvasEngine {
 
   _setPixel(x, y, color) {
     const i = this._idx(x, y);
-    if (this.pixels[i] !== color) {
-      this.pixels[i] = color;
+    const buf = this._paintTarget();
+    if (buf[i] !== color) {
+      buf[i] = color;
     }
   }
 
   _eraseArea(cx, cy) {
     const size = this.eraserSize;
     const radius = Math.floor(size / 2);
+    const buf = this._paintTarget();
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         if (dx * dx + dy * dy <= radius * radius + 0.5) {
@@ -497,7 +555,7 @@ class CanvasEngine {
           const y = cy + dy;
           if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
             const i = this._idx(x, y);
-            this.pixels[i] = null;
+            buf[i] = null;
           }
         }
       }
@@ -505,7 +563,8 @@ class CanvasEngine {
   }
 
   _floodFill(sx, sy, newColor) {
-    const target = this.pixels[this._idx(sx, sy)];
+    const buf = this._paintTarget();
+    const target = buf[this._idx(sx, sy)];
     if (target === newColor) return;
     const stack = [[sx, sy]];
     const visited = new Set();
@@ -516,8 +575,8 @@ class CanvasEngine {
       if (visited.has(key)) continue;
       visited.add(key);
       const i = this._idx(x, y);
-      if (this.pixels[i] !== target) continue;
-      this.pixels[i] = newColor;
+      if (buf[i] !== target) continue;
+      buf[i] = newColor;
       stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
     }
   }

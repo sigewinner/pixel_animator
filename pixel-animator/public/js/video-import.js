@@ -393,14 +393,41 @@
     }
 
     const currentIdx = anim.current;
+    const layerSys = window.layerSystem || null;
 
-    // 替换当前帧为第一帧
-    anim.frames[currentIdx] = pixelFrames[0].slice();
-    engine.loadFrame(pixelFrames[0]);
+    // 替换当前帧为第一帧（写入当前帧的当前图层缓冲，保证图层数据持久化）
+    if (layerSys) {
+      const layer0 = layerSys.getCurrentLayer();
+      if (layer0) {
+        layer0.pixels = pixelFrames[0].slice();
+        layerSys.saveCurrentFrameLayers();
+        const composite = layerSys.getCompositePixels();
+        anim.frames[currentIdx] = composite.slice();
+        engine.pixels = composite;
+        engine.render();
+      }
+    } else {
+      anim.frames[currentIdx] = pixelFrames[0].slice();
+      engine.loadFrame(pixelFrames[0]);
+    }
 
-    // 如果有更多帧，插入到当前帧后面
+    // 如果有更多帧，插入到当前帧后面（同步图层缓冲，并把导入像素写入当前图层）
     for (let i = 1; i < pixelFrames.length; i++) {
       anim.frames.splice(currentIdx + i, 0, pixelFrames[i].slice());
+      if (layerSys) {
+        layerSys.addFrameLayers(currentIdx + i);
+        const layerI = layerSys.getCurrentLayer();
+        if (layerI) {
+          layerI.pixels = pixelFrames[i].slice();
+          layerSys.saveCurrentFrameLayers();
+        }
+      }
+    }
+
+    // 统一把当前帧切回第一帧并重新合成（修正 addFrameLayers 过程中
+    // _syncToEngine 对当前帧合成图的临时覆盖，确保当前帧显示导入的首帧）
+    if (layerSys) {
+      layerSys.loadFrameLayers(currentIdx);
     }
 
     anim.current = currentIdx;

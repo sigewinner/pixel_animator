@@ -40,15 +40,20 @@
   var engine, anim;
   var isDeletingColor = false;
 
-  // ---- 快照历史 ----
+  // ---- 快照历史（全局：包含图层数据与所有帧） ----
   var undoStack = [];
   var redoStack = [];
-  var MAX_HISTORY = 200;
+  var MAX_HISTORY = 100;
 
-  // 保存当前所有帧的快照
+  // 保存当前所有帧 + 图层状态的快照
   function saveSnapshot() {
-    var snapshot = anim.frames.map(function(f) { return f.slice(); });
-    return snapshot;
+    return {
+      width: engine.width,
+      height: engine.height,
+      frames: anim.frames.map(function(f) { return f.slice(); }),
+      current: anim.current,
+      layers: (window.layerSystem ? window.layerSystem.getSnapshot() : null)
+    };
   }
 
   function pushSnapshot() {
@@ -78,17 +83,39 @@
 
   function restoreSnapshot(snap) {
     // 恢复帧数据
-    anim.frames = snap.map(function(f) { return f.slice(); });
+    anim.frames = snap.frames.map(function(f) { return f.slice(); });
     // 修正当前帧索引
-    if (anim.current >= anim.frames.length) {
-      anim.current = anim.frames.length - 1;
-    }
+    if (snap.current != null) anim.current = snap.current;
+    if (anim.current >= anim.frames.length) anim.current = anim.frames.length - 1;
     if (anim.current < 0) anim.current = 0;
-    // 加载当前帧
-    engine.loadFrame(anim.frames[anim.current]);
+
+    // 尺寸还原（撤销/重做可能跨越"改尺寸"操作）
+    if (snap.width && snap.height && (engine.width !== snap.width || engine.height !== snap.height)) {
+      var ps = computePixelSize(snap.width, snap.height);
+      basePixelSize = ps;
+      engine.resize(snap.width, snap.height, ps);
+      anim.width = snap.width;
+      anim.height = snap.height;
+      canvasW = snap.width;
+      canvasH = snap.height;
+      updateSizeDisplay();
+      updateZoomLabel();
+      renderFrameList();
+    }
+
+    if (snap.layers && window.layerSystem) {
+      // 图层数据存在：完整恢复图层与每帧每层像素
+      window.layerSystem.restoreSnapshot(snap.layers);
+    } else if (window.layerSystem) {
+      // 旧快照无图层数据：从恢复后的帧重建单图层
+      window.layerSystem.reinitFromAnim();
+      engine.loadFrame(anim.frames[anim.current]);
+    } else {
+      engine.loadFrame(anim.frames[anim.current]);
+    }
+
     anim._renderOnion();
     renderFrameList();
-    // 注意：engine.history 会被清空，但没关系，因为快照已经包含所有帧
     engine.history = [];
     engine.future = [];
   }
@@ -145,6 +172,7 @@
       palette: getActivePalette(),
       customColors: customColors,
       thumbnail: anim.getThumbnail(),
+      layerData: (window.layerSystem ? window.layerSystem.getSnapshot() : null),
       savedAt: new Date().toISOString(),
     };
   }
@@ -245,6 +273,8 @@
         normalizeFrame(newFrame);
         return newFrame;
       });
+      // 暂存图层数据，待 LayerSystem 创建后恢复（保持与帧一致）
+      window.__pendingLayerData = project.layerData || null;
       anim.current = currentFrame || 0;
       anim.fps = fps || 12;
       document.getElementById('workTitle').value = project.title || '';
@@ -366,7 +396,11 @@
     }
 
     anim.onFramesChange = renderFrameList;
-    anim.onFrameSelect = function(i) { updateFrameListSelection(i); };
+    anim.onFrameSelect = function(i) {
+      updateFrameListSelection(i);
+      // 播放/切换时让图层系统跟随当前帧（手动切换已由 selectFrame 包装处理，这里幂等）
+      if (window.layerSystem) window.layerSystem.loadFrameLayers(i);
+    };
     renderFrameList();
     updateSizeDisplay();
     updateZoomLabel();
@@ -407,18 +441,30 @@
 
     // 初始化图层系统
     window.layerSystem = new LayerSystem(engine, anim);
+    // 图层变更（增删/排序/合并/可见性/不透明度/重命名/清空）均触发全局撤销快照
+    window.layerSystem.onChange = pushSnapshot;
 
-    // 修改动画系统的帧同步，使用图层系统
-    // 在 engine.onDrawEnd 回调中，更新当前图层
+    // 切换帧时：先保存当前帧的图层像素，再让图层系统加载目标帧的图层数据
+    var _origSelectFrame = anim.selectFrame.bind(anim);
+    anim.selectFrame = function(index) {
+      if (window.layerSystem) window.layerSystem.saveCurrentFrameLayers();
+      var r = _origSelectFrame(index);
+      return r;
+    };
+
+    // 绘制完成时：合成图已写入 engine.pixels，当前图层像素由引擎直接写入 activeLayer。
+    // 这里只需把当前帧合成图同步回 anim.frames，并持久化当前帧的图层像素，然后记录快照。
     engine.onDrawEnd = function(pixelsCopy) {
-      // 更新当前图层的像素
-      const currentLayer = layerSystem.getCurrentLayer();
-      if (currentLayer) {
-        currentLayer.pixels = pixelsCopy.slice();
-      }
-      // 保存快照
+      anim.frames[anim.current] = pixelsCopy.slice();
+      if (window.layerSystem) window.layerSystem.saveCurrentFrameLayers();
       pushSnapshot();
     };
+
+    // 若加载的项目携带图层数据，则恢复（覆盖构造时的单图层初始化）
+    if (window.__pendingLayerData && window.layerSystem) {
+      window.layerSystem.restoreSnapshot(window.__pendingLayerData);
+      window.__pendingLayerData = null;
+    }
 
     // 修改帧列表渲染，使用图层数据
     // 在 renderFrameList 中，使用 layerSystem 获取合成像素
@@ -875,15 +921,18 @@
       }
     });
   
-    // 清空
+    // 清空当前图层
     document.getElementById('btnClear').addEventListener('click', function() {
-      if (confirm('清空当前帧？')) {
+      if (!confirm('清空当前图层？')) return;
+      if (window.layerSystem) {
+        window.layerSystem.clearCurrentLayer();
+      } else {
         engine.clear();
         var idx = anim.current;
         anim.frames[idx] = engine.pixels.slice();
         pushSnapshot();
-        autoSave();
       }
+      autoSave();
     });
   
     // 网格按钮（保持原有逻辑）
@@ -990,21 +1039,26 @@
 
     anim.addFrame = function() {
       origAdd();
-      // 保存快照
+      // 同步图层数据：为新帧创建（空的）每层缓冲
+      if (window.layerSystem) window.layerSystem.addFrameLayers(anim.current);
       pushSnapshot();
       renderFrameList();
       autoSave();
     };
 
     anim.duplicateFrame = function() {
+      var src = anim.current;
       origDup();
+      if (window.layerSystem) window.layerSystem.duplicateFrameLayers(src);
       pushSnapshot();
       renderFrameList();
       autoSave();
     };
 
     anim.deleteFrame = function() {
+      var old = anim.current;
       origDel();
+      if (window.layerSystem) window.layerSystem.deleteFrameLayers(old);
       pushSnapshot();
       renderFrameList();
       autoSave();
@@ -1012,6 +1066,7 @@
 
     anim.moveFrame = function(from, to) {
       origMove(from, to);
+      if (window.layerSystem) window.layerSystem.moveFrameLayers(from, to);
       pushSnapshot();
       renderFrameList();
       autoSave();
@@ -1405,7 +1460,6 @@
     }
   
     // 处理每一帧
-    engine.pushHistory();
     for (var dataIdx2 = 0; dataIdx2 < framesData.length; dataIdx2++) {
       var data = framesData[dataIdx2];
       var pixels;
@@ -1427,12 +1481,32 @@
       }
   
       if (dataIdx2 === 0) {
-        anim.frames[anim.current] = pixels.slice();
-        engine.loadFrame(pixels);
+        // 写入当前帧的当前图层缓冲（而非仅写合成图），保证图层数据持久化
+        if (window.layerSystem) {
+          var layer0 = window.layerSystem.getCurrentLayer();
+          if (layer0) {
+            layer0.pixels = pixels.slice();
+            window.layerSystem.saveCurrentFrameLayers();
+            window.layerSystem._syncToEngine();
+          }
+        } else {
+          anim.frames[anim.current] = pixels.slice();
+          engine.loadFrame(pixels);
+        }
       } else {
+        // 新增一帧（bindFrames 包装已同步图层缓冲）
         anim.addFrame();
-        anim.frames[anim.current] = pixels.slice();
-        engine.loadFrame(pixels);
+        if (window.layerSystem) {
+          var layerN = window.layerSystem.getCurrentLayer();
+          if (layerN) {
+            layerN.pixels = pixels.slice();
+            window.layerSystem.saveCurrentFrameLayers();
+            window.layerSystem._syncToEngine();
+          }
+        } else {
+          anim.frames[anim.current] = pixels.slice();
+          engine.loadFrame(pixels);
+        }
       }
     }
     renderFrameList();
@@ -1682,9 +1756,12 @@
       var newPixelSize = computePixelSize(dims.w, dims.h);
       basePixelSize = newPixelSize;
       zoomLevel = 1.0;
+      var oldW = engine.width, oldH = engine.height;
       engine.resize(dims.w, dims.h, newPixelSize);
       anim.resize(dims.w, dims.h);
-  
+      // 同步缩放所有帧的所有图层像素
+      if (window.layerSystem) window.layerSystem.resize(dims.w, dims.h, oldW, oldH);
+
       canvasW = dims.w;
       canvasH = dims.h;
       engine.loadFrame(anim.frames[anim.current]);
@@ -1777,8 +1854,11 @@
       var newPixelSize = computePixelSize(rect.w, rect.h);
       basePixelSize = newPixelSize;
       zoomLevel = 1.0;
+      var oldW = engine.width, oldH = engine.height;
       engine.applyCrop(rect.x1, rect.y1, rect.x2, rect.y2, newPixelSize);
       anim.crop(rect.x1, rect.y1, rect.x2, rect.y2);
+      // 同步裁剪所有帧的所有图层像素
+      if (window.layerSystem) window.layerSystem.crop(rect.x1, rect.y1, rect.x2, rect.y2, oldW, oldH);
 
       canvasW = engine.width;
       canvasH = engine.height;
@@ -2015,6 +2095,7 @@
       fps: anim.fps,
       frames: anim.getAllFrames(),
       thumbnail: anim.getThumbnail(),
+      layerData: (window.layerSystem ? window.layerSystem.getSnapshot() : null),
       savedAt: new Date().toISOString(),
     };
 
@@ -2061,6 +2142,12 @@
         });
         anim.current = 0;
         anim.fps = project.fps || 12;
+
+        // 恢复图层数据（若有），否则从帧重建单图层
+        if (window.layerSystem) {
+          if (project.layerData) window.layerSystem.restoreSnapshot(project.layerData);
+          else window.layerSystem.reinitFromAnim();
+        }
 
         canvasW = newW;
         canvasH = newH;
@@ -2123,42 +2210,4 @@
     init().catch(function(e) { console.error(e); });
   }
 })();
-
-
-
-//add
-
-const overlay = document.getElementById('cardOverlay');
-  const openBtn = document.getElementById('open-settingcard-btn');
-  const closeBtn = document.getElementById('cardClose');
-
-  function openCard() {
-    overlay.classList.add('open');
-    document.querySelector('.main-content')?.classList.add('blurred');
-  }
-
-  function closeCard() {
-    overlay.classList.remove('open');
-    document.querySelector('.main-content')?.classList.remove('blurred');
-  }
-
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeCard();
-  });
-
-  openBtn.addEventListener('click', openCard);
-  closeBtn.addEventListener('click', closeCard);
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeCard();
-  });
-
-  // ★★★ 启动代码 ★★★
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-      init().catch(function(e) { console.error(e); });
-    });
-  } else {
-    init().catch(function(e) { console.error(e); });
-  }
 
