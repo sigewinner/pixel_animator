@@ -289,9 +289,20 @@
     var win = getWindowById(winId);
     if (!win) return;
 
-    // If minimized, restore first
+    // If minimized, restore its geometry/state inline.
+    // NOTE: 之前这里直接调用 restoreWindow，而 restoreWindow 又会调用 activateWindow，
+    // 导致 onActivate 被触发两次（递归）。改为在此内联恢复，保证 onActivate 只触发一次。
     if (win.state === 'minimized') {
-      WindowManager.restoreWindow(winId);
+      win.state = 'normal';
+      win.el.classList.remove('minimized');
+      win.el.classList.remove('maximized');
+      if (win.prevBounds) {
+        win.el.style.left = win.prevBounds.left;
+        win.el.style.top = win.prevBounds.top;
+        win.el.style.width = win.prevBounds.width;
+        win.el.style.height = win.prevBounds.height;
+      }
+      updateTaskbarButton(win);
     }
 
     // Deactivate all
@@ -315,6 +326,12 @@
     // Callback
     if (WindowManager.onActivate) {
       WindowManager.onActivate(win.tabIndex);
+    }
+    // 自愈钩子：确保画布(canvasWrap)始终位于「当前活动窗口」的可见 .win-active-area 内。
+    // 这一步是兜底——无论任何路径/竞态导致画布被留在非活动窗口（display:none），
+    // 在此立即把它迁回活动窗口，避免“画面丢失 / 不可编辑”。
+    if (WindowManager.onAfterActivate) {
+      WindowManager.onAfterActivate(win.tabIndex);
     }
   };
 
@@ -578,6 +595,7 @@
 
   // Callbacks (set by app.js)
   WindowManager.onActivate = null;
+  WindowManager.onAfterActivate = null; // 自愈钩子：激活后确保画布位于活动窗口
   WindowManager.onClose = null;
   WindowManager.onRename = null;
   WindowManager.onAddCanvas = null;

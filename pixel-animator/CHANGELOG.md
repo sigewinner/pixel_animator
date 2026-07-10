@@ -2,6 +2,22 @@
 
 本文件记录 Pixel Animator 各版本的更新内容。
 
+## v32.7 — 画布丢失/不可编辑 自愈兜底 + 点击转发修复（2026-07-10）
+
+### 🛡️ 画布「画面丢失 / 不可编辑」自愈兜底
+- **背景**：用户多次反馈「打开页面过了一会」或「操作一阵后」画布会丢失画面且无法绘制。根因机制是：单一 `#canvasWrap`（含 `#drawCanvas`）在窗口间物理迁移，非活动窗口的 `.win-active-area` 为 `display:none`；一旦画布因某种竞态（动画打断、快速连击、激活/最小化时序）被留在非活动窗口内，就会出现「画面消失 + `offsetParent=null` 无法点击」的现象。
+- **修复（多重兜底，确保任何路径下画布都在活动窗口可见区域）**：
+  1. `window-manager.js` 的 `activateWindow` 末尾新增 `onAfterActivate` 回调钩子，每次激活窗口后**立即**把 `canvasWrap` / `cropBar` 迁回当前活动窗口的 `.win-active-area`（不再依赖单一调用方手动搬迁）。
+  2. `app.js` 新增 `ensureCanvasInActiveWindow()`，并把 `WindowManager.onAfterActivate` 指向它；同时 `init()` 中启动一个 500ms 周期守护 `setInterval(ensureCanvasInActiveWindow, 500)` 作为最后兜底——任何未预料的竞态导致画布被留在非活动窗口时，最多 500ms 内自动迁回。
+  3. 消除 `activateWindow` 在窗口处于 `minimized` 状态时「`activateWindow → restoreWindow → activateWindow`」的递归，保证 `onActivate` 只触发一次，避免激活/恢复过程中的状态抖动与重复迁移。
+- **验证（puppeteer + Edge 实机）**：
+  - 强行把 `canvasWrap` 塞进非活动窗口（模拟竞态）后，守护在 500ms 内将其迁回活动窗口，画面与可编辑性恢复正常。
+  - 随机 120+ 步压力测试（切换 / 最小化 / 还原 / 最大化 / 新建 / 关闭 / 绘制 交替，并在快速连击下打断动画），全程 `canvasWrap` 始终位于活动窗口可见区域，且每步绘制均成功改变 `engine.pixels`。
+
+### 🖱️ 修复：点击非活动窗口「穿透绘制」导致 `isDrawing` 卡死
+- **修复：切换到非活动窗口时，`onActivate` 只派发了合成的 `mousedown`、没有配对的 `mouseup`**。在快速点击（真实 `mouseup` 早于 rAF 派发的合成 `mousedown`）时，`engine.isDrawing` 会被永久置为 `true`，之后每次 `mousemove` 都会误绘、无法收敛。
+  - 修复：合成事件改为**成对派发 `mousedown` + `mouseup`**，并对原点击坐标做「是否落在画布当前可视范围内」边界判断——只有真正点在画布上才绘制，否则仅激活窗口、不绘制。
+
 ## v32.4 — 最小化/最大化过渡动画 + 音效丢失修复（2026-07-10）
 
 ### 🎬 最小化 / 最大化 / 还原 过渡动画

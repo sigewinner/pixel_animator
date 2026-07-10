@@ -41,6 +41,27 @@
     }
   }
 
+  // 自愈：确保 canvasWrap / cropBar 始终位于“当前活动窗口”的 .win-active-area 内。
+  // 只要活动窗口正确，画布就一定在可见、可交互的容器中；
+  // 任何竞态导致画布被留在非活动窗口（其 .win-active-area 为 display:none，
+  // 表现为“画面丢失 / 不可编辑”）时，这里会立即把它迁回。
+  function ensureCanvasInActiveWindow() {
+    if (typeof WindowManager === 'undefined') return;
+    var activeWin = WindowManager.getActiveWindow();
+    if (!activeWin || !activeWin.el) return;
+    var area = activeWin.el.querySelector('.win-active-area');
+    if (!area) return;
+
+    var wrap = document.getElementById('canvasWrap');
+    if (wrap && wrap.parentElement !== area) {
+      area.appendChild(wrap);
+    }
+    var cropBar = document.getElementById('cropBar');
+    if (cropBar && cropBar.parentElement !== area) {
+      area.appendChild(cropBar);
+    }
+  }
+
   function autoFitCanvasToWindow() {
     if (typeof WindowManager === 'undefined' || !engine) return;
     var winObj = WindowManager.getWindowByTabIndex(activeTabIndex);
@@ -543,20 +564,30 @@
             WindowManager._pendingClick = null;
             requestAnimationFrame(function() {
               var canvas = document.getElementById('drawCanvas');
-              if (canvas) {
-                // Simulate mousedown at the same screen position
-                var simulatedEvent = new MouseEvent('mousedown', {
+              if (!canvas) return;
+              var rect = canvas.getBoundingClientRect();
+              // 仅当原点击坐标落在画布当前可视范围内才转发（否则只激活、不绘制）
+              if (pending.clientX >= rect.left && pending.clientX <= rect.right &&
+                  pending.clientY >= rect.top && pending.clientY <= rect.bottom) {
+                var opts = {
                   clientX: pending.clientX,
                   clientY: pending.clientY,
                   bubbles: true,
                   cancelable: true
-                });
-                canvas.dispatchEvent(simulatedEvent);
+                };
+                // 成对派发 mousedown + mouseup：
+                // 之前的实现只派发 mousedown，若用户快速点击（真实 mouseup 早于 rAF），
+                // 会导致 engine.isDrawing 永远为 true（之后每次 mousemove 都误绘）。
+                canvas.dispatchEvent(new MouseEvent('mousedown', opts));
+                canvas.dispatchEvent(new MouseEvent('mouseup', opts));
               }
             });
           }
         }
       };
+
+      // 自愈钩子：每次激活后确保画布位于活动窗口可见区域
+      WindowManager.onAfterActivate = ensureCanvasInActiveWindow;
 
       WindowManager.onClose = function(tabIndex) {
         closeCanvasTab(tabIndex);
@@ -1014,6 +1045,12 @@
         if (engine) engine.render();
         renderInactiveWindowPreviews();
       });
+
+      // 自愈守护：周期性确保画布始终位于活动窗口的可见 .win-active-area 内。
+      // 这是最后一道兜底——任何未预料的竞态（动画打断、快速连击等）导致画布
+      // 被留在非活动窗口（display:none → 画面丢失 / 不可编辑）时，最多 500ms 内自动迁回。
+      if (window.__canvasHeal) clearInterval(window.__canvasHeal);
+      window.__canvasHeal = setInterval(ensureCanvasInActiveWindow, 500);
     }
 
     document.getElementById('btnSaveDraft').addEventListener('click', function() {
