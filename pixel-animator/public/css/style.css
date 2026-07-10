@@ -255,6 +255,50 @@ img, canvas {
 .auth-footer a { color: var(--accent); text-decoration: none; }
 .auth-footer a:hover { color: var(--accent-hi); text-decoration: underline; }
 
+/* ==================== 背景更换按钮 ==================== */
+.bg-changer {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  gap: 10px;
+  z-index: 100;
+}
+.bg-changer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--text);
+  background: var(--surface);
+  border: 2px solid var(--border);
+  box-shadow: var(--bevel-out);
+  cursor: pointer;
+  transition: none;
+}
+.bg-changer .bg-changer-btn {
+  color: var(--bg-deep);
+  background: var(--primary);
+  border-color: var(--border-light);
+}
+.bg-changer .bg-changer-btn:hover {
+  background: var(--primary-hi);
+}
+.bg-changer .bg-reset-btn {
+  display: none;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+.bg-changer .bg-reset-btn.show {
+  display: inline-flex;
+}
+.bg-changer .bg-reset-btn:hover {
+  color: var(--text);
+  background: var(--surface-hov);
+}
+
 /* ==================== 编辑器主体 ==================== */
 body.editor {
   font-family: var(--font-body);
