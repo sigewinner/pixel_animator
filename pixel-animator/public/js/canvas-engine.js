@@ -17,6 +17,12 @@ class CanvasEngine {
     this.isDrawing = false;
     this.showGrid = true;
     this.rotation = 0; // 画布旋转角度（视图变换，不破坏像素数据）
+    this.panX = 0;      // 画布平移（视图变换，屏幕像素）
+    this.panY = 0;
+    this.isPanning = false;
+    this._panLast = null;
+    this._spaceHeld = false;
+    this.shapeFill = false; // 矩形/椭圆是否填充
     this.eraserSize = 3;
     this.penSize = 1;
 
@@ -106,10 +112,73 @@ class CanvasEngine {
   // 旋转画布（视图变换，不修改像素数据）。deg 为绝对角度，可累积
   setRotation(deg) {
     this.rotation = ((Math.round(deg) % 360) + 360) % 360;
-    this.canvas.style.transformOrigin = 'center center';
-    this.canvas.style.transform = `rotate(${this.rotation}deg)`;
+    this._applyTransform();
     this._updateCursor();
     if (this.onRotationChange) this.onRotationChange(this.rotation);
+  }
+
+  // 合并「平移 + 旋转」为单一 transform（中心点不变，平移作用于屏幕坐标系）
+  _applyTransform() {
+    this.canvas.style.transformOrigin = 'center center';
+    this.canvas.style.transform = `translate(${this.panX}px, ${this.panY}px) rotate(${this.rotation}deg)`;
+  }
+
+  // 直接设置平移（屏幕像素）
+  setPan(x, y) {
+    this.panX = x;
+    this.panY = y;
+    this._applyTransform();
+  }
+
+  // 相对平移（拖拽时累加）
+  panBy(dx, dy) {
+    this.setPan(this.panX + dx, this.panY + dy);
+  }
+
+  // 重置视图：平移归零 + 旋转归零
+  resetView() {
+    this.panX = 0;
+    this.panY = 0;
+    this.setRotation(0);
+  }
+
+  // 空格临时平移开关（按住空格即可拖拽画布）
+  setSpacePan(v) {
+    this._spaceHeld = !!v;
+    this._updateCursor();
+  }
+
+  // 像素级变换：对单个扁平像素数组做 翻转/旋转，返回新数组与新尺寸。
+  // kind: flipH | flipV | rotCW | rotCCW（旋转会交换宽高）
+  static transformFrame(src, w, h, kind) {
+    const n = w * h;
+    const dst = new Array(n).fill(null);
+    if (kind === 'flipH') {
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++)
+          dst[y * w + (w - 1 - x)] = src[y * w + x];
+      return { pixels: dst, w, h };
+    }
+    if (kind === 'flipV') {
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++)
+          dst[(h - 1 - y) * w + x] = src[y * w + x];
+      return { pixels: dst, w, h };
+    }
+    if (kind === 'rotCW') {
+      // 新尺寸：宽 = h，高 = w
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++)
+          dst[x * h + (h - 1 - y)] = src[y * w + x];
+      return { pixels: dst, w: h, h: w };
+    }
+    if (kind === 'rotCCW') {
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++)
+          dst[(w - 1 - x) * h + y] = src[y * w + x];
+      return { pixels: dst, w: h, h: w };
+    }
+    return { pixels: src.slice(), w, h };
   }
 
   // 洋葱皮：prev=前一帧(红) next=后一帧(蓝)，均为扁平像素数组或 null
@@ -125,6 +194,10 @@ class CanvasEngine {
 
   _updateCursor() {
     const canvas = this.canvas;
+    if (this.tool === 'pan' || this._spaceHeld) {
+      canvas.style.cursor = this.isPanning ? 'grabbing' : 'grab';
+      return;
+    }
     if (this.tool === 'eraser') {
       const size = this.eraserSize * this.pixelSize;
       const radius = Math.max(4, size / 2);
@@ -264,6 +337,14 @@ class CanvasEngine {
       e.preventDefault();
       const { x, y } = this._getPixelCoord(e);
 
+      // 画布平移（pan 工具或按住空格）
+      if (this.tool === 'pan' || this._spaceHeld) {
+        this.isPanning = true;
+        this._panLast = { x: e.clientX, y: e.clientY };
+        this._updateCursor();
+        return;
+      }
+
       if (this.tool === 'crop') {
         this.isDrawing = true;
         this.cropStart = { x, y };
@@ -293,7 +374,7 @@ class CanvasEngine {
         this.onDrawStart();
       }
 
-      if (this.tool === 'line' || this.tool === 'circle') {
+      if (this.tool === 'line' || this.tool === 'circle' || this.tool === 'rect' || this.tool === 'ellipse') {
         this.previewStart = { x, y };
         this.previewSnapshot = this.pixels.slice();
       } else {
@@ -324,6 +405,16 @@ class CanvasEngine {
         const r = Math.round(Math.hypot(x - this.previewStart.x, y - this.previewStart.y));
         this._drawCirclePixels(this.previewStart.x, this.previewStart.y, r, this.color);
         this.render();
+      } else if (this.tool === 'rect') {
+        this.pixels = this.previewSnapshot.slice();
+        this._drawRectPixels(this.previewStart.x, this.previewStart.y, x, y, this.color);
+        this.render();
+      } else if (this.tool === 'ellipse') {
+        this.pixels = this.previewSnapshot.slice();
+        const rx = Math.abs(x - this.previewStart.x);
+        const ry = Math.abs(y - this.previewStart.y);
+        this._drawEllipsePixels(this.previewStart.x, this.previewStart.y, rx, ry, this.color);
+        this.render();
       } else {
         if (this.lastDrawX >= 0 && this.lastDrawY >= 0) {
           this._drawLinePixels(this.lastDrawX, this.lastDrawY, x, y, this.tool === 'eraser' ? null : this.color);
@@ -337,6 +428,13 @@ class CanvasEngine {
     };
 
     const onUp = () => {
+      if (this.isPanning) {
+        this.isPanning = false;
+        this._panLast = null;
+        this._updateCursor();
+        return;
+      }
+
       if (this.tool === 'crop' && this.isDrawing) {
         this.isDrawing = false;
         const rect = this.getCropRect();
@@ -353,7 +451,9 @@ class CanvasEngine {
       // 判断是否在绘制中（非预览工具，非裁剪工具）
       const wasDrawing = this.isDrawing && 
                           this.tool !== 'line' && 
-                          this.tool !== 'circle' && 
+                          this.tool !== 'circle' &&
+                          this.tool !== 'rect' &&
+                          this.tool !== 'ellipse' &&
                           this.tool !== 'crop' &&
                           this.tool !== 'eyedropper';
 
@@ -371,8 +471,19 @@ class CanvasEngine {
       }
     };
 
+    // 窗口级 mousemove：用于平移拖拽（鼠标可移出画布）
+    const onWindowMove = (e) => {
+      if (this.isPanning && this._panLast) {
+        const dx = e.clientX - this._panLast.x;
+        const dy = e.clientY - this._panLast.y;
+        this._panLast = { x: e.clientX, y: e.clientY };
+        this.panBy(dx, dy);
+      }
+    };
+
     this.canvas.addEventListener('mousedown', onDown);
     this.canvas.addEventListener('mousemove', onMove);
+    window.addEventListener('mousemove', onWindowMove);
     window.addEventListener('mouseup', onUp);
 
     this.canvas.addEventListener('touchstart', (e) => {
@@ -383,6 +494,13 @@ class CanvasEngine {
     this.canvas.addEventListener('touchmove', (e) => {
       e.preventDefault();
       const t = e.touches[0];
+      if (this.isPanning && this._panLast) {
+        const dx = t.clientX - this._panLast.x;
+        const dy = t.clientY - this._panLast.y;
+        this._panLast = { x: t.clientX, y: t.clientY };
+        this.panBy(dx, dy);
+        return;
+      }
       onMove({ clientX: t.clientX, clientY: t.clientY });
     });
     this.canvas.addEventListener('touchend', onUp);
@@ -402,6 +520,8 @@ class CanvasEngine {
       this._eraseArea(x, y);
     } else if (this.tool === 'fill') {
       this._floodFill(x, y, this.color);
+    } else if (this.tool === 'rect' || this.tool === 'ellipse') {
+      this._setPixel(x, y, this.color);
     }
   }
 
@@ -423,6 +543,7 @@ class CanvasEngine {
   }
 
   _setPixel(x, y, color) {
+    if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
     const i = this._idx(x, y);
     if (this.pixels[i] !== color) {
       this.pixels[i] = color;
@@ -513,6 +634,46 @@ class CanvasEngine {
       y++;
       if (err <= 0) { err += 2 * y + 1; }
       if (err > 0) { x--; err -= 2 * x + 1; }
+    }
+  }
+
+  _drawRectPixels(x0, y0, x1, y1, color) {
+    const minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        if (this.shapeFill || x === minX || x === maxX || y === minY || y === maxY) {
+          this._setPixel(x, y, color);
+        }
+      }
+    }
+  }
+
+  _inEllipse(x, y, cx, cy, rx, ry) {
+    if (rx === 0 && ry === 0) return x === cx && y === cy;
+    const xr = rx || 1, yr = ry || 1;
+    return ((x - cx) * (x - cx)) / (xr * xr) + ((y - cy) * (y - cy)) / (yr * yr) <= 1;
+  }
+
+  _drawEllipsePixels(cx, cy, rx, ry, color) {
+    if (rx < 0) rx = 0;
+    if (ry < 0) ry = 0;
+    if (rx === 0 && ry === 0) { this._setPixel(cx, cy, color); return; }
+    const xr = rx || 1, yr = ry || 1;
+    for (let y = cy - ry; y <= cy + ry; y++) {
+      for (let x = cx - rx; x <= cx + rx; x++) {
+        if (!this._inEllipse(x, y, cx, cy, rx, ry)) continue;
+        if (this.shapeFill) {
+          this._setPixel(x, y, color);
+        } else {
+          const edge =
+            !this._inEllipse(x - 1, y, cx, cy, rx, ry) ||
+            !this._inEllipse(x + 1, y, cx, cy, rx, ry) ||
+            !this._inEllipse(x, y - 1, cx, cy, rx, ry) ||
+            !this._inEllipse(x, y + 1, cx, cy, rx, ry);
+          if (edge) this._setPixel(x, y, color);
+        }
+      }
     }
   }
 

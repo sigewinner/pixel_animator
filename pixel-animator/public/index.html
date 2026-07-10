@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
-  <link rel="stylesheet" href="css/style.css?v=9">
+  <link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body class="editor">
 
@@ -160,6 +160,18 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>
           <span class="tooltip">圆形 (C)</span>
         </button>
+        <button class="tool-btn" data-tool="rect">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+          <span class="tooltip">矩形 (R)</span>
+        </button>
+        <button class="tool-btn" data-tool="ellipse">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
+          <span class="tooltip">椭圆 (O)</span>
+        </button>
+        <button class="tool-btn" data-tool="pan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3"/><path d="M9 5l3-3 3 3"/><path d="M15 19l-3 3-3-3"/><path d="M19 9l3 3-3 3"/><path d="M2 12h20"/><path d="M12 2v20"/></svg>
+          <span class="tooltip">平移 (空格)</span>
+        </button>
 
         <button class="tool-btn" id="btnToggleLayers" data-show-layers="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -227,6 +239,16 @@
             <button class="zoom-btn" id="btnRotR" title="顺时针旋转 90°">⟳</button>
             <button class="zoom-btn" id="btnRotReset" title="重置旋转">⟰</button>
             <input type="range" id="rotSlider" min="0" max="359" value="0" style="width:84px;accent-color:var(--primary)" title="自由旋转角度">
+          </div>
+          <div class="zoom-control">
+            <button class="zoom-btn" id="btnFlipH" title="水平翻转（像素）">↔</button>
+            <button class="zoom-btn" id="btnFlipV" title="垂直翻转（像素）">↕</button>
+            <button class="zoom-btn" id="btnRotCCW90" title="逆时针旋转 90°（像素）">⟲</button>
+            <button class="zoom-btn" id="btnRotCW90" title="顺时针旋转 90°（像素）">⟳</button>
+            <button class="zoom-btn" id="btnResetView" title="重置视图（平移/旋转）">↺</button>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text,#333);margin-left:4px;">
+              <input type="checkbox" id="shapeFillCb"> 填充
+            </label>
           </div>
           <div class="zoom-control">
             <button class="zoom-btn" id="btnZoomOut" title="缩小">−</button>
@@ -547,11 +569,11 @@
 
   <script src="lib/gif.js/gif.js"></script>
   <script src="js/auth.js?v=7"></script>
-  <script src="js/canvas-engine.js?v=9"></script>
+  <script src="js/canvas-engine.js?v=10"></script>
   <script src="js/animation.js?v=7"></script>
   <script src="js/color-wheel.js?v=7"></script>
   <script src="js/layer-system.js?v=7"></script>
-  <script src="js/app.js?v=9"></script>
+  <script src="js/app.js?v=10"></script>
   <script src="js/video-import.js?v=7"></script>
   <script src="js/sound.js?v=7"></script>
   <script>

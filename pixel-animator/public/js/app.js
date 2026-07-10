@@ -358,6 +358,30 @@
     bindPaletteActions();
     bindZoom();
     bindRotation();
+    bindTransform();
+
+    // 空格临时平移 + 矩形/椭圆快捷键
+    window.addEventListener('keydown', function(e) {
+      var tag = (e.target && e.target.tagName) ? e.target.tagName : '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.code === 'Space' && !e.repeat) {
+        engine.setSpacePan(true);
+        e.preventDefault();
+      } else if (e.key === 'r' || e.key === 'R') {
+        if (engine.tool !== 'pan' && !engine._spaceHeld) {
+          var rb = document.querySelector('[data-tool="rect"]');
+          if (rb) rb.click();
+        }
+      } else if (e.key === 'o' || e.key === 'O') {
+        if (engine.tool !== 'pan' && !engine._spaceHeld) {
+          var ob = document.querySelector('[data-tool="ellipse"]');
+          if (ob) ob.click();
+        }
+      }
+    });
+    window.addEventListener('keyup', function(e) {
+      if (e.code === 'Space') engine.setSpacePan(false);
+    });
 
     var fitModeSelect = document.getElementById('fitMode');
     if (fitModeSelect) fitModeSelect.value = 'contain';
@@ -1715,6 +1739,62 @@
     if (slider) slider.addEventListener('input', function() {
       engine.setRotation(Number(slider.value));
     });
+  }
+
+  // ★★★ 像素级变换（翻转/旋转，真正修改像素数据，作用于所有图层/帧） ★★★
+  function applyPixelTransform(kind) {
+    const ls = window.layerSystem;
+    const w = anim.width, h = anim.height;
+    let newW = w, newH = h;
+    if (kind === 'rotCW' || kind === 'rotCCW') { newW = h; newH = w; }
+
+    // 变换所有图层
+    if (ls && ls.layers) {
+      for (const layer of ls.layers) {
+        layer.pixels = CanvasEngine.transformFrame(layer.pixels, w, h, kind).pixels;
+      }
+    }
+    // 变换所有帧（用于导出 / 洋葱皮 / 播放）
+    anim.frames = anim.frames.map(function(f) {
+      return CanvasEngine.transformFrame(f, w, h, kind).pixels;
+    });
+    anim.width = newW;
+    anim.height = newH;
+
+    // 更新引擎画布尺寸
+    const ps = engine.pixelSize;
+    engine.width = newW;
+    engine.height = newH;
+    engine.canvas.width = newW * ps;
+    engine.canvas.height = newH * ps;
+    engine.resetView();
+
+    if (ls) ls._syncToEngine();
+    else { engine.loadFrame(anim.frames[anim.current]); engine.render(); }
+
+    canvasW = newW;
+    canvasH = newH;
+    updateSizeDisplay();
+    updateZoomLabel();
+    renderFrameList();
+    pushSnapshot();
+    autoSave();
+  }
+
+  function bindTransform() {
+    var btnFlipH = document.getElementById('btnFlipH');
+    var btnFlipV = document.getElementById('btnFlipV');
+    var btnRotCW = document.getElementById('btnRotCW90');
+    var btnRotCCW = document.getElementById('btnRotCCW90');
+    var btnResetView = document.getElementById('btnResetView');
+    var shapeFillCb = document.getElementById('shapeFillCb');
+
+    if (btnFlipH) btnFlipH.addEventListener('click', function() { applyPixelTransform('flipH'); });
+    if (btnFlipV) btnFlipV.addEventListener('click', function() { applyPixelTransform('flipV'); });
+    if (btnRotCW) btnRotCW.addEventListener('click', function() { applyPixelTransform('rotCW'); });
+    if (btnRotCCW) btnRotCCW.addEventListener('click', function() { applyPixelTransform('rotCCW'); });
+    if (btnResetView) btnResetView.addEventListener('click', function() { engine.resetView(); });
+    if (shapeFillCb) shapeFillCb.addEventListener('change', function() { engine.shapeFill = shapeFillCb.checked; });
   }
 
   function setZoom(z) {
