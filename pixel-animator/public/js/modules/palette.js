@@ -142,7 +142,7 @@
     if (S.tempPalette.length === 0) {
       var empty = document.createElement('span');
       empty.className = 'temp-empty';
-      empty.textContent = '🎨 点击吸管取色';
+      empty.textContent = '点击吸管取色';
       container.appendChild(empty);
       return;
     }

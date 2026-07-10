@@ -146,7 +146,7 @@
       importToAnimation(pixelFrames);
 
       updateProgress(100);
-      showHint('✅ 成功导入 ' + pixelFrames.length + ' 帧！', false);
+      showHint('成功导入 ' + pixelFrames.length + ' 帧！', false);
       showVideoInfo('导入 ' + pixelFrames.length + ' 帧 · 时长 ' + duration.toFixed(1) + 's');
 
       // 关闭图片卡片（如果是打开的）
@@ -457,7 +457,7 @@
       anim.setFps(fps);
     }
 
-    showHint('✅ 已导入 ' + pixelFrames.length + ' 帧！', false);
+    showHint('已导入 ' + pixelFrames.length + ' 帧！', false);
   }
 
   // ---- 暴露引擎和动画到全局（供视频导入使用） ----
@@ -539,6 +539,6 @@
     getAnimation,
   };
 
-  console.log('📹 视频导入模块已加载');
+  console.log('视频导入模块已加载');
 
 })();

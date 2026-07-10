@@ -8,23 +8,23 @@
       dark: {
         id: 'dark',
         name: '深色主题',
-        icon: '🌙',
-        css: null, // 默认就是深色，无需额外 CSS
+        icon: '',
+        css: null, // 默认就是深色（style.css），无需额外 CSS
         description: '经典深色专业主题'
       },
       light: {
         id: 'light',
-        name: '明亮主题',
-        icon: '☀️',
-        css: 'css/frutiger-metro.css',
-        description: 'Frutiger Metro 明亮风格'
+        name: '现代浅色主题',
+        icon: '',
+        css: 'css/light.css?v=8',
+        description: '现代浅色专业主题'
       },
-      win98: {
-        id: 'win98',
-        name: 'Win98 主题',
-        icon: '🪟',
-        css: 'css/win98-windows.css',
-        description: 'Windows 98 复古窗口风格'
+      win7: {
+        id: 'win7',
+        name: 'Win7 主题',
+        icon: '',
+        css: 'css/win7.css?v=8',
+        description: 'Win7 浅色专业主题'
       }
     };
   
@@ -102,7 +102,7 @@
         saveThemePreference(themeId);
   
         // 更新 body 类名
-        document.body.classList.remove('theme-dark', 'theme-light', 'theme-win98');
+        document.body.classList.remove('theme-dark', 'theme-win7');
         document.body.classList.add('theme-' + themeId);
   
         // 触发主题切换事件
@@ -115,7 +115,7 @@
         updateThemeUI(themeId);
   
         if (!silent) {
-          console.log(`🎨 主题已切换: ${theme.name}`);
+          console.log(`主题已切换: ${theme.name}`);
         }
   
         return true;
@@ -138,7 +138,7 @@
       if (preview) {
         const theme = THEMES[themeId];
         if (theme) {
-          preview.textContent = `${theme.icon} ${theme.name}`;
+          preview.textContent = theme.name;
         }
       }
     }
@@ -166,7 +166,7 @@
       // 绑定设置卡片中的主题选择器
       bindThemeSelector();
   
-      console.log('🎨 主题系统已初始化，当前主题:', savedTheme);
+      console.log('主题系统已初始化，当前主题:', savedTheme);
     }
   
     // 绑定主题选择器事件

@@ -420,6 +420,12 @@ body.editor {
 }
 .card-close:hover { color: #f87171; }
 
+  /* 设置面板 — 锁定基准字号/行高，使三种主题下卡片尺寸一致（深色默认 16px，与浅色 14px 对齐） */
+  #settingCardOverlay .card-modal {
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+  }
+
 
 
 

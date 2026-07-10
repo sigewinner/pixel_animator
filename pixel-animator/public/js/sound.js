@@ -1,8 +1,13 @@
-// public/js/sound.js - Retro game-style sound effects engine
-// Uses Web Audio API to generate 8-bit/16-bit sounds (no external files needed)
+// public/js/sound.js - 现代风格 UI 音效引擎
+// 使用 Web Audio API 实时合成「柔和、克制」的现代界面音效：
+//   · 以正弦 / 三角波为主，避免刺耳的方波
+//   · 统一经过低通滤波（master bus）让音色更温润
+//   · 柔和的 attack / 指数衰减包络，短促不突兀
+// 不依赖任何外部音频文件。
 
 (function () {
   var audioCtx = null;
+  var master = null;
   var muted = false;
   try { muted = localStorage.getItem('pa_sound_muted') === '1'; } catch (e) {}
 
@@ -16,58 +21,74 @@
     return audioCtx;
   }
 
-  // Play a single tone
-  function tone(freq, duration, type, volume, startTime) {
+  // 共享的「母带」链路：gain -> lowpass -> destination
+  // 低通让所有音效听起来更柔和、现代，避免高频毛刺。
+  function getMaster() {
     var ctx = getCtx();
-    if (!ctx) return;
-    type = type || 'square';
-    volume = volume || 0.15;
-    var t0 = startTime || ctx.currentTime;
-    var osc = ctx.createOscillator();
-    var gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t0);
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(volume, t0 + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
+    if (!ctx) return null;
+    if (!master) {
+      var bus = ctx.createGain();
+      bus.gain.value = 0.85;
+
+      var lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 5200;   // 温润、不过亮
+      lp.Q.value = 0.4;
+
+      bus.connect(lp);
+      lp.connect(ctx.destination);
+      master = bus;
+    }
+    return master;
   }
 
-  // Play a frequency sweep
-  function sweep(freqStart, freqEnd, duration, type, volume) {
+  // 单个「音色」：振荡器 -> 增益(包络) -> 母带
+  function voice(freq, when, dur, opts) {
+    opts = opts || {};
     var ctx = getCtx();
     if (!ctx) return;
-    type = type || 'square';
-    volume = volume || 0.15;
-    var t0 = ctx.currentTime;
+    var m = getMaster();
+    if (!m) return;
+
+    var type = opts.type || 'sine';
+    var peak = (opts.volume != null) ? opts.volume : 0.12;
+    var attack = (opts.attack != null) ? opts.attack : 0.006;
+    var release = (opts.release != null) ? opts.release : Math.min(0.14, dur * 0.85);
+
     var osc = ctx.createOscillator();
-    var gain = ctx.createGain();
     osc.type = type;
-    osc.frequency.setValueAtTime(freqStart, t0);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + duration);
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(volume, t0 + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
+    osc.frequency.setValueAtTime(freq, when);
+    if (opts.glideTo) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, opts.glideTo), when + dur);
+    }
+
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.exponentialRampToValueAtTime(peak, when + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + dur + release);
+
+    osc.connect(g);
+    g.connect(m);
+    osc.start(when);
+    osc.stop(when + dur + release + 0.03);
   }
 
-  // Play a sequence of tones
-  function sequence(notes, type, volume) {
+  // 顺序播放一组音符
+  function seq(notes, opts) {
     var ctx = getCtx();
     if (!ctx) return;
-    type = type || 'square';
-    volume = volume || 0.15;
     var t = ctx.currentTime;
-    notes.forEach(function (note) {
-      tone(note.f, note.d, type, volume, t);
-      t += note.d;
+    notes.forEach(function (n) {
+      voice(n.f, t, n.d, Object.assign({}, opts, n));
+      t += n.d;
     });
+  }
+
+  // 便捷：立即播放一个滑音（glide）
+  function glide(f0, f1, dur, opts) {
+    var ctx = getCtx();
+    if (!ctx) return;
+    voice(f0, ctx.currentTime, dur, Object.assign({}, opts, { glideTo: f1 }));
   }
 
   var SFX = {
@@ -85,170 +106,178 @@
       return muted;
     },
 
-    // Generic button click - short blip
+    // 通用点击：柔和短促的「啵」声
     click: function () {
       if (muted) return;
-      tone(880, 0.04, 'square', 0.12);
-      tone(1320, 0.03, 'square', 0.08, getCtx().currentTime + 0.02);
+      glide(720, 980, 0.055, { type: 'sine', volume: 0.10, attack: 0.004, release: 0.05 });
     },
 
-    // Tool/option select - two ascending tones
+    // 选择工具：两声柔和上行（E5 -> A5）
     select: function () {
       if (muted) return;
-      sequence([
-        { f: 660, d: 0.03 },
-        { f: 990, d: 0.04 }
-      ], 'square', 0.12);
+      seq([
+        { f: 659.25, d: 0.045 },
+        { f: 880.00, d: 0.07 }
+      ], { type: 'triangle', volume: 0.11 });
     },
 
-    // Color swatch pick - pleasant blip
+    // 取色：明亮清脆的小跳音
     pick: function () {
       if (muted) return;
-      tone(1200, 0.03, 'square', 0.1);
-      tone(1600, 0.04, 'triangle', 0.08, getCtx().currentTime + 0.02);
+      glide(1046.5, 1318.5, 0.07, { type: 'sine', volume: 0.10, attack: 0.003, release: 0.06 });
     },
 
-    // Eyedropper - high blip with quick fall
+    // 吸管：快速下行轻音
     eyedropper: function () {
       if (muted) return;
-      sweep(2000, 800, 0.08, 'square', 0.1);
+      glide(1568, 784, 0.09, { type: 'sine', volume: 0.09, attack: 0.004, release: 0.08 });
     },
 
-    // Confirm/apply - happy ascending arpeggio
+    // 确认 / 应用：温暖的上行大三和弦（C5 E5 G5）
     confirm: function () {
       if (muted) return;
-      sequence([
-        { f: 523, d: 0.04 },
-        { f: 659, d: 0.04 },
-        { f: 784, d: 0.06 }
-      ], 'square', 0.12);
+      seq([
+        { f: 523.25, d: 0.05 },
+        { f: 659.25, d: 0.05 },
+        { f: 783.99, d: 0.10 }
+      ], { type: 'triangle', volume: 0.11 });
     },
 
-    // Cancel - descending tone
+    // 取消：柔和下行
     cancel: function () {
       if (muted) return;
-      sweep(440, 220, 0.12, 'square', 0.1);
+      glide(440, 330, 0.13, { type: 'sine', volume: 0.10, release: 0.10 });
     },
 
-    // Delete - low descending buzz
+    // 删除：低沉、克制的下行
     delete: function () {
       if (muted) return;
-      sweep(330, 110, 0.15, 'sawtooth', 0.12);
+      glide(311.13, 196.00, 0.16, { type: 'triangle', volume: 0.12, release: 0.12 });
     },
 
-    // Add (frame/color) - ascending two-tone
+    // 新增（帧 / 颜色）：轻快上行
     add: function () {
       if (muted) return;
-      sequence([
-        { f: 587, d: 0.03 },
-        { f: 880, d: 0.05 }
-      ], 'square', 0.12);
+      seq([
+        { f: 587.33, d: 0.04 },
+        { f: 880.00, d: 0.07 }
+      ], { type: 'sine', volume: 0.10 });
     },
 
-    // Undo - quick reverse blip
+    // 撤销：反向轻滑
     undo: function () {
       if (muted) return;
-      sweep(880, 440, 0.06, 'square', 0.1);
+      glide(880, 587.33, 0.07, { type: 'sine', volume: 0.09, release: 0.06 });
     },
 
-    // Redo - quick forward blip
+    // 重做：正向轻滑
     redo: function () {
       if (muted) return;
-      sweep(440, 880, 0.06, 'square', 0.1);
+      glide(587.33, 880, 0.07, { type: 'sine', volume: 0.09, release: 0.06 });
     },
 
-    // Toggle (grid/onion/panel) - on/off switch
+    // 开关（网格 / 洋葱皮 / 面板）：两声极短轻点
     toggle: function () {
       if (muted) return;
-      tone(660, 0.02, 'square', 0.1);
-      tone(990, 0.03, 'square', 0.1, getCtx().currentTime + 0.02);
+      var ctx = getCtx();
+      if (!ctx) return;
+      voice(660, ctx.currentTime, 0.03, { type: 'sine', volume: 0.09 });
+      voice(990, ctx.currentTime + 0.04, 0.035, { type: 'sine', volume: 0.09 });
     },
 
-    // Play animation - rising arpeggio
+    // 播放动画：上行琶音
     play: function () {
       if (muted) return;
-      sequence([
-        { f: 523, d: 0.03 },
-        { f: 659, d: 0.03 },
-        { f: 784, d: 0.03 },
-        { f: 1047, d: 0.06 }
-      ], 'square', 0.12);
+      seq([
+        { f: 523.25, d: 0.04 },
+        { f: 659.25, d: 0.04 },
+        { f: 783.99, d: 0.04 },
+        { f: 1046.5, d: 0.09 }
+      ], { type: 'triangle', volume: 0.10 });
     },
 
-    // Stop animation - falling tone
+    // 停止动画：下行琶音
     stop: function () {
       if (muted) return;
-      sequence([
-        { f: 1047, d: 0.03 },
-        { f: 784, d: 0.03 },
-        { f: 523, d: 0.05 }
-      ], 'square', 0.1);
+      seq([
+        { f: 1046.5, d: 0.04 },
+        { f: 783.99, d: 0.04 },
+        { f: 523.25, d: 0.07 }
+      ], { type: 'triangle', volume: 0.09 });
     },
 
-    // Save - confirmation chime
+    // 保存：明亮、令人安心的三音和声
     save: function () {
       if (muted) return;
-      sequence([
-        { f: 784, d: 0.03 },
-        { f: 1047, d: 0.03 },
-        { f: 1319, d: 0.08 }
-      ], 'triangle', 0.12);
+      seq([
+        { f: 783.99, d: 0.05 },
+        { f: 1046.5, d: 0.05 },
+        { f: 1318.5, d: 0.12 }
+      ], { type: 'sine', volume: 0.11 });
     },
 
-    // Error - harsh low tone
+    // 错误：柔和低音双音（不再刺耳）
     error: function () {
       if (muted) return;
-      tone(140, 0.12, 'sawtooth', 0.12);
-      tone(110, 0.1, 'sawtooth', 0.1, getCtx().currentTime + 0.06);
+      var ctx = getCtx();
+      if (!ctx) return;
+      voice(174.61, ctx.currentTime, 0.12, { type: 'sine', volume: 0.12 });
+      voice(130.81, ctx.currentTime + 0.08, 0.14, { type: 'sine', volume: 0.11 });
     },
 
-    // Zoom in
+    // 放大
     zoomIn: function () {
       if (muted) return;
-      sweep(660, 990, 0.05, 'square', 0.08);
+      glide(660, 990, 0.06, { type: 'sine', volume: 0.08, release: 0.05 });
     },
 
-    // Zoom out
+    // 缩小
     zoomOut: function () {
       if (muted) return;
-      sweep(990, 660, 0.05, 'square', 0.08);
+      glide(990, 660, 0.06, { type: 'sine', volume: 0.08, release: 0.05 });
     },
 
-    // Open modal/overlay
+    // 打开弹窗 / 浮层：柔和上扬
     open: function () {
       if (muted) return;
-      sweep(440, 880, 0.08, 'triangle', 0.1);
+      glide(392, 784, 0.10, { type: 'triangle', volume: 0.09, release: 0.08 });
     },
 
-    // Close modal/overlay
+    // 关闭弹窗 / 浮层：柔和回落
     close: function () {
       if (muted) return;
-      sweep(880, 440, 0.08, 'triangle', 0.1);
+      glide(784, 392, 0.10, { type: 'triangle', volume: 0.09, release: 0.08 });
     },
 
-    // Place pixel (pen draw) - very short tick
+    // 落笔（铅笔）：极短轻点
     pen: function () {
       if (muted) return;
-      tone(1400, 0.015, 'square', 0.06);
+      var ctx = getCtx();
+      if (!ctx) return;
+      voice(1200, ctx.currentTime, 0.018, { type: 'sine', volume: 0.05, attack: 0.002, release: 0.02 });
     },
 
-    // Erase
+    // 橡皮擦
     erase: function () {
       if (muted) return;
-      tone(500, 0.02, 'square', 0.06);
+      var ctx = getCtx();
+      if (!ctx) return;
+      voice(523.25, ctx.currentTime, 0.025, { type: 'sine', volume: 0.05, attack: 0.002, release: 0.025 });
     },
 
-    // Fill (bucket)
+    // 填充（油漆桶）：柔和上滑
     fill: function () {
       if (muted) return;
-      sweep(800, 1200, 0.08, 'triangle', 0.1);
+      glide(740, 1174.7, 0.10, { type: 'triangle', volume: 0.10, release: 0.08 });
     },
 
-    // Frame select
+    // 帧选择
     frameSelect: function () {
       if (muted) return;
-      tone(740, 0.025, 'triangle', 0.08);
-    },
+      var ctx = getCtx();
+      if (!ctx) return;
+      voice(740, ctx.currentTime, 0.03, { type: 'triangle', volume: 0.08, attack: 0.003, release: 0.03 });
+    }
   };
 
   window.SFX = SFX;

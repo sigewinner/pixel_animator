@@ -638,7 +638,7 @@
       }
     });
 
-    console.log('🔊 音效已集成');
+    console.log('音效已集成');
   }
 
   PA.init = init;
