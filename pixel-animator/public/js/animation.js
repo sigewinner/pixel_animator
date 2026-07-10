@@ -26,6 +26,7 @@ class Animation {
 
   selectFrame(index) {
     if (index < 0 || index >= this.frames.length) return;
+    // 保存当前帧
     this.frames[this.current] = this.engine.getPixels();
     this.current = index;
     this.engine.loadFrame(this.frames[index]);
@@ -34,6 +35,7 @@ class Animation {
   }
 
   addFrame() {
+    // 保存当前帧
     this.frames[this.current] = this.engine.getPixels();
     const newFrame = this.emptyPixel();
     this.frames.splice(this.current + 1, 0, newFrame);

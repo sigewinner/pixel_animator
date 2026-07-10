@@ -9,6 +9,21 @@
   <title>PixelForge · 像素动画编辑器</title>
   <link rel="stylesheet" href="css/style.css?v=7">
 </head>
+
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>PixelForge · 像素动画编辑器</title>
+  <!-- 基础样式 -->
+  <link rel="stylesheet" href="css/style.css?v=7">
+  <!-- ★★★ 主题样式会在 theme.js 中动态加载 ★★★ -->
+</head>
+
+
 <body class="editor">
 
   <!-- 顶部栏 -->
@@ -80,6 +95,49 @@
         </div>
       </div>
 
+      <!-- 图层区域（新增） -->
+      <div class="panel-section layer-section" id="layerPanel" style="display:none;">
+        <h3>
+          图层
+          <span style="font-weight:400;font-size:10px;color:var(--text-dim);text-transform:none">(当前帧)</span>
+        </h3>
+        <div class="layer-list" id="layerList">
+          <div class="layer-empty">暂无图层，点击 "新建" 创建</div>
+        </div>
+        <div class="layer-opacity-row">
+          <label>不透明度</label>
+          <input type="range" id="layerOpacitySlider" min="0" max="100" value="100" style="flex:1;accent-color:var(--primary)">
+          <span id="layerOpacityLabel" style="font-size:11px;color:var(--text-muted);min-width:36px;text-align:right">100%</span>
+        </div>
+        <div class="layer-actions">
+          <button class="action-btn sm" id="btnAddLayer" title="新建图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            新建
+          </button>
+          <button class="action-btn sm" id="btnDupLayer" title="复制图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            复制
+          </button>
+          <button class="action-btn sm danger" id="btnDelLayer" title="删除图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            删除
+          </button>
+        </div>
+        <div class="layer-actions" style="margin-top:4px;">
+          <button class="action-btn sm" id="btnLayerUp" title="上移图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+            上移
+          </button>
+          <button class="action-btn sm" id="btnLayerDown" title="下移图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            下移
+          </button>
+          <button class="action-btn sm" id="btnMergeLayer" title="向下合并">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4 12l8 8 8-8"/></svg>
+            合并
+          </button>
+        </div>
+      </div>
       
     </aside>
 
@@ -113,10 +171,54 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.5" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor"/></svg>
           <span class="tooltip">直线 (L)</span>
         </button>
-        <button class="tool-btn" data-tool="circle">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>
-          <span class="tooltip">圆形 (C)</span>
+
+        <div class="tool-shape-group" id="shapeToolGroup">
+          <button class="tool-btn" data-tool="shape" id="btnShape">
+            <svg id="shapeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>
+            <span class="tooltip">图形 (C)</span>
+          </button>
+          <div class="shape-popup" id="shapeSubmenu">
+            <button class="shape-option active" data-shape="circle" title="圆形">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/></svg>
+              <span>圆形</span>
+            </button>
+            <button class="shape-option" data-shape="ellipse" title="椭圆">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
+              <span>椭圆</span>
+            </button>
+            <button class="shape-option" data-shape="rect" title="矩形">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="5" width="16" height="14"/></svg>
+              <span>矩形</span>
+            </button>
+            <button class="shape-option" data-shape="star" title="五角星">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.5 6.5L21 10l-5 4.5L17.5 21 12 17.5 6.5 21 8 14.5 3 10l6.5-.5z"/></svg>
+              <span>五角星</span>
+            </button>
+            <button class="shape-option" data-shape="diamond" title="菱形">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 9-8 9-8-9z"/></svg>
+              <span>菱形</span>
+            </button>
+            <button class="shape-option" data-shape="heart" title="心形">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z"/></svg>
+              <span>心形</span>
+            </button>
+          </div>
+        </div>
+
+
+        <button class="tool-btn" id="btnToggleLayers" data-show-layers="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="3,9 12,4 21,9 21,13 12,18 3,13" />
+            <polygon points="3,9 12,4 21,9" />
+            <polyline points="3,13 3,9" />
+            <polyline points="21,13 21,9" />
+            <polygon points="5,13 12,9 19,13 19,17 12,21 5,17" />
+            <polyline points="5,17 5,13" />
+            <polyline points="19,17 19,13" />
+          </svg>
+          <span class="tooltip">图层</span>
         </button>
+
         <button class="tool-btn" data-tool="crop">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
           <span class="tooltip">裁剪 (K)</span>
@@ -260,26 +362,88 @@
     <input type="file" id="projectFileInput" accept=".pixa,.json" style="display:none">
   </footer>
 
-  <!-- ★★★ 设置卡片弹窗（原 cardOverlay） ★★★ -->
+
+  <!-- 图层面板 -->
+  <div class="card-overlay">
+    <div class="panel-section layer-section">
+      <h3 class="section-toggle" data-target="layerContent">
+        图层
+        <svg class="toggle-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </h3>
+      <div class="collapsible-content" id="layerContent">
+        <div class="layer-opacity-row">
+          <label>不透明度</label>
+          <input type="range" id="layerOpacitySlider" min="0" max="100" value="100" style="flex:0 0 80px;accent-color:var(--primary)">
+          <span id="layerOpacityLabel" style="font-size:11px;color:var(--text-muted);min-width:32px;text-align:right">100%</span>
+        </div>
+        <div class="layer-actions">
+          <button class="action-btn sm" id="btnAddLayer" title="新建图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            新建
+          </button>
+          <button class="action-btn sm" id="btnDupLayer" title="复制图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            复制
+          </button>
+          <button class="action-btn sm danger" id="btnDelLayer" title="删除图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            删除
+          </button>
+        </div>
+        <div class="layer-actions">
+          <button class="action-btn sm" id="btnLayerUp" title="上移图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+            上移
+          </button>
+          <button class="action-btn sm" id="btnLayerDown" title="下移图层">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            下移
+          </button>
+          <button class="action-btn sm" id="btnMergeLayer" title="向下合并">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4 12l8 8 8-8"/></svg>
+            合并
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ★★★ 设置卡片弹窗 ★★★ -->
   <div class="card-overlay" id="settingCardOverlay">
     <div class="card-modal">
-      <div class="card-modal-header">
-        <span>⚙️ 作品设置</span>
-        <button class="card-close" id="settingCardClose">&times;</button>
+      <div class="card-modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <span style="font-size:16px;font-weight:700;">⚙️ 作品设置</span>
+        <button class="card-close" id="settingCardClose" style="background:none;border:none;color:var(--text-muted);font-size:22px;cursor:pointer;">&times;</button>
       </div>
-      <div class="panel-section">
+      <div class="panel-section" style="border-bottom:none;">
+
+        <!-- 在设置卡片的 panel-section 中添加主题选择 -->
+        <div class="panel-section" style="border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">
+          <h3>🎨 主题</h3>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <select id="themeSelector" style="flex:1; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-deep); color:var(--text); font-size:14px; cursor:pointer; outline:none;">
+              <option value="dark">🌙 深色主题</option>
+              <option value="light">☀️ 明亮主题</option>
+              <option value="win98">🪟 Win98 主题</option>
+            </select>
+            <span id="themePreview" style="font-size:13px; color:var(--text-muted); padding:6px 12px; background:var(--surface-hi); border-radius:var(--radius-sm); white-space:nowrap; cursor:pointer;" title="点击切换主题">
+              🌙 深色主题
+            </span>
+          </div>
+        </div>
+
         <div class="size-controls">
-          <div class="size-row">
-            <label>作品名称</label>
-            <input type="text" id="workTitle" placeholder="作品名称" class="text-input">
+          <div class="size-row" style="margin-bottom:10px;">
+            <label style="width:60px;">作品名称</label>
+            <input type="text" id="workTitle" placeholder="作品名称" class="text-input" style="flex:1;">
           </div>
-          <div class="size-row">
-            <label>作者</label>
-            <input type="text" id="workAuthor" placeholder="作者" class="text-input">
+          <div class="size-row" style="margin-bottom:10px;">
+            <label style="width:60px;">作者</label>
+            <input type="text" id="workAuthor" placeholder="作者" class="text-input" style="flex:1;">
           </div>
-          <div class="size-row">
-            <label>分辨率</label>
-            <select id="resolutionSelect" class="size-select">
+          <div class="size-row" style="margin-bottom:10px;">
+            <label style="width:60px;">分辨率</label>
+            <select id="resolutionSelect" class="size-select" style="flex:1;">
               <option value="16">16 px</option>
               <option value="24">24 px</option>
               <option value="32" selected>32 px</option>
@@ -289,9 +453,9 @@
               <option value="128">128 px</option>
             </select>
           </div>
-          <div class="size-row">
-            <label>比例</label>
-            <select id="ratioSelect" class="size-select">
+          <div class="size-row" style="margin-bottom:10px;">
+            <label style="width:60px;">比例</label>
+            <select id="ratioSelect" class="size-select" style="flex:1;">
               <option value="1:1" selected>1:1 正方形</option>
               <option value="4:3">4:3 横屏</option>
               <option value="3:4">3:4 竖屏</option>
@@ -303,9 +467,16 @@
               <option value="2:3">2:3</option>
             </select>
           </div>
-          <div class="size-row" style="align-items: center; justify-content: center; gap: 10px;">
+          <div class="size-row" style="align-items:center;justify-content:center;gap:10px;margin-bottom:12px;">
             <button class="action-btn primary" id="btnApplySize">应用</button>
             <span id="currentSize" class="size-display">32 × 32</span>
+          </div>
+          <div class="size-row" style="padding-top:10px;border-top:1px solid var(--border);">
+            <label style="width:60px;">🔊 音效</label>
+            <button class="sound-toggle-btn" id="btnSoundToggle" title="开关音效" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--border);background:var(--surface-hi);cursor:pointer;">
+              <svg id="soundOnIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+              <svg id="soundOffIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -316,7 +487,7 @@
   <div class="card-overlay" id="pictureCardOverlay">
     <div class="card-modal picture-card">
       <div class="card-modal-header">
-        <span>🖼️ 照片转像素</span>
+        <span>照片转像素</span>
         <button class="card-close" id="pictureCardClose">&times;</button>
       </div>
       <div class="picture-card-body">
@@ -357,6 +528,38 @@
         
         <div class="import-hint" id="importHint"></div>
       </div>
+
+
+
+      <div class="panel-section video-import-section">
+        <h3 class="section-toggle" data-target="videoImportContent">
+          视频转帧
+          <svg class="toggle-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </h3>
+        <div class="collapsible-content" id="videoImportContent">
+          <button class="action-btn" id="btnImportVideo">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+            选择视频（≤15秒）
+          </button>
+          <input type="file" id="videoInput" accept="video/*" style="display:none">
+          <div class="import-option-row">
+            <label>采样帧率</label>
+            <select id="videoFps" class="mini-select">
+              <option value="3">3 FPS</option>
+              <option value="6">6 FPS</option>
+              <option value="8" selected>8 FPS</option>
+              <option value="12">12 FPS</option>
+              <option value="15">15 FPS</option>
+            </select>
+          </div>
+          <div class="video-info" id="videoInfo"></div>
+          <div class="video-progress" id="videoProgress" style="display:none">
+            <div class="video-progress-bar"><div class="video-progress-fill"></div></div>
+            <span class="video-progress-text">0%</span>
+          </div>
+          <div class="import-hint" id="videoImportHint"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -393,8 +596,16 @@
   <script src="js/canvas-engine.js?v=7"></script>
   <script src="js/animation.js?v=7"></script>
   <script src="js/color-wheel.js?v=7"></script>
+  <script src="js/layer-system.js?v=7"></script>
   <script src="js/app.js?v=7"></script>
+  <script src="js/video-import.js?v=7"></script>
+  <script src="js/sound.js?v=7"></script>
+  <script src="js/theme.js?v=1"></script>
   <script>
+
+
+
+
     (function() {
       var user = Auth.requireAuth();
       if (user) {
@@ -495,6 +706,42 @@
     });
     document.querySelector('.main-content')?.classList.remove('blurred');
   };
+
+  // ---- 音效按钮控制 ----
+  (function() {
+    var btn = document.getElementById('btnSoundToggle');
+    var onIcon = document.getElementById('soundOnIcon');
+    var offIcon = document.getElementById('soundOffIcon');
+
+    function updateSoundUI() {
+      if (!window.SFX) return;
+      var isMuted = window.SFX.muted;
+      if (onIcon) onIcon.style.display = isMuted ? 'none' : 'block';
+      if (offIcon) offIcon.style.display = isMuted ? 'block' : 'none';
+      if (btn) {
+        btn.title = isMuted ? '开启音效' : '关闭音效';
+        btn.style.borderColor = isMuted ? 'var(--danger)' : 'var(--primary)';
+      }
+    }
+
+    if (btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (!window.SFX) return;
+        var wasMuted = window.SFX.muted;
+        window.SFX.toggleMute();
+        if (wasMuted && !window.SFX.muted) {
+          setTimeout(function() {
+            window.SFX.click();
+            setTimeout(function() { window.SFX.confirm(); }, 150);
+          }, 50);
+        }
+        updateSoundUI();
+      });
+    }
+
+    setTimeout(updateSoundUI, 500);
+  })();
 
   </script>
 </body>

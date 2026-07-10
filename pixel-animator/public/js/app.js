@@ -77,20 +77,22 @@
   }
 
   function restoreSnapshot(snap) {
-    // 恢复帧数据
     anim.frames = snap.map(function(f) { return f.slice(); });
-    // 修正当前帧索引
     if (anim.current >= anim.frames.length) {
       anim.current = anim.frames.length - 1;
     }
     if (anim.current < 0) anim.current = 0;
-    // 加载当前帧
     engine.loadFrame(anim.frames[anim.current]);
     anim._renderOnion();
     renderFrameList();
-    // 注意：engine.history 会被清空，但没关系，因为快照已经包含所有帧
     engine.history = [];
     engine.future = [];
+    // 恢复图层
+    if (window.layerSystem) {
+      window.layerSystem._syncFromFrames(anim.frames);
+      window.layerSystem.switchToFrame(anim.current);
+      window.layerSystem._renderLayerList();
+    }
   }
 
   // ---- 颜色标准化 ----
@@ -263,152 +265,16 @@
       updateSizeDisplay();
       updateZoomLabel();
       renderTempPalette();
-      // 清空历史
       undoStack = [];
       redoStack = [];
+      if (window.layerSystem) {
+        window.layerSystem._syncFromFrames(anim.frames);
+        window.layerSystem.switchToFrame(anim.current);
+        window.layerSystem._renderLayerList();
+      }
       return true;
     }
     return false;
-  }
-
-  // ---- 初始化 ----
-  async function init() {
-    var res = parseInt(document.getElementById('resolutionSelect').value);
-    var ratio = document.getElementById('ratioSelect').value;
-    var dims = computeDims(res, ratio);
-    canvasW = dims.w;
-    canvasH = dims.h;
-
-    var canvas = document.getElementById('drawCanvas');
-    basePixelSize = computePixelSize(canvasW, canvasH);
-    engine = new CanvasEngine(canvas, canvasW, canvasH, basePixelSize);
-    anim = new Animation(engine, canvasW, canvasH);
-
-    // ★★★ 绘制完成时保存快照 ★★★
-    engine.onDrawEnd = function(pixelsCopy) {
-      // 将引擎当前帧像素同步到 anim.frames
-      var idx = anim.current;
-      anim.frames[idx] = pixelsCopy.slice();
-      pushSnapshot();  // 保存整个帧列表的快照
-    };
-
-    engine.onColorPick = function(color) {
-      var targetColor = normalizeColor(color);
-      if (isDeletingColor) {
-        isDeletingColor = false;
-        if (!targetColor) {
-          alert('无法识别该颜色');
-          switchToPencil();
-          return;
-        }
-        anim.syncCurrentFrame();
-        var frame = anim.frames[anim.current];
-        if (!confirm('确定要删除当前帧中所有「' + targetColor + '」像素吗？')) {
-          switchToPencil();
-          return;
-        }
-        var count = 0;
-        for (var i = 0; i < frame.length; i++) {
-          var pixelNorm = normalizeColor(frame[i]);
-          if (pixelNorm !== null && pixelNorm === targetColor) {
-            frame[i] = null;
-            count++;
-          }
-        }
-        if (count > 0) {
-          engine.loadFrame(frame);
-          engine.render();
-          renderFrameList();
-          alert('已删除 ' + count + ' 个像素。');
-          // 删除颜色也是一个操作，保存快照
-          pushSnapshot();
-        } else {
-          alert('当前帧中没有该颜色。');
-        }
-        switchToPencil();
-        return;
-      }
-
-      if (targetColor) {
-        addToTempPalette(targetColor);
-        document.getElementById('colorPicker').value = targetColor;
-        engine.setColor(targetColor);
-        document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
-        var swatches = document.querySelectorAll('.swatch');
-        for (var i = 0; i < swatches.length; i++) {
-          if (swatches[i].style.background === targetColor) {
-            swatches[i].classList.add('active');
-            break;
-          }
-        }
-        switchToPencil();
-      }
-    };
-
-    buildPalette();
-    bindToolbar();
-    bindFrames();
-    bindPlayback();
-    bindExport();
-    bindImport();
-    bindCanvasSize();
-    bindCrop();
-    bindColorWheel();
-    bindPaletteActions();
-    bindZoom();
-
-    var fitModeSelect = document.getElementById('fitMode');
-    if (fitModeSelect) fitModeSelect.value = 'contain';
-
-    for (var i = 0; i < anim.frames.length; i++) {
-      normalizeFrame(anim.frames[i]);
-    }
-
-    anim.onFramesChange = renderFrameList;
-    anim.onFrameSelect = function(i) { updateFrameListSelection(i); };
-    renderFrameList();
-    updateSizeDisplay();
-    updateZoomLabel();
-    renderTempPalette();
-
-    await loadProject();
-
-    if (anim.frames.length === 0) {
-      var empty = new Array(canvasW * canvasH).fill(null);
-      anim.frames = [empty];
-      anim.current = 0;
-      engine.loadFrame(empty);
-      engine.render();
-      renderFrameList();
-    }
-
-    document.getElementById('btnSaveDraft').addEventListener('click', function() {
-      saveDraftLocally(true);
-    });
-    document.getElementById('btnSaveProject').addEventListener('click', function() {
-      saveProjectToServer(true);
-    });
-
-    engine.render();
-    // 初始保存快照
-    pushSnapshot();
-  }
-
-  // ---- 删除颜色按钮 ----
-  function startDeleteColor() {
-    if (isDeletingColor) {
-      isDeletingColor = false;
-      switchToPencil();
-      return;
-    }
-    isDeletingColor = true;
-    document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
-    var eyedropper = document.querySelector('[data-tool="eyedropper"]');
-    if (eyedropper) eyedropper.classList.add('active');
-    engine.setTool('eyedropper');
-    document.getElementById('penSizeControl').style.display = 'none';
-    document.getElementById('eraserSizeControl').style.display = 'none';
-    alert('点击画布上的颜色像素来删除该颜色（仅当前帧）。');
   }
 
   // ---- 调色板 ----
@@ -609,7 +475,6 @@
     var extractToggle = document.getElementById('extractToggle');
     var extractRow = document.getElementById('extractToggleRow');
     
-    // ★★★ 默认量化是关闭的 ★★★
     quantToggle.checked = false;
     ditherRow.style.display = 'none';
     extractRow.style.display = 'none';
@@ -628,6 +493,23 @@
     });
   }
 
+  // ---- 删除颜色 ----
+  function startDeleteColor() {
+    if (isDeletingColor) {
+      isDeletingColor = false;
+      switchToPencil();
+      return;
+    }
+    isDeletingColor = true;
+    document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
+    var eyedropper = document.querySelector('[data-tool="eyedropper"]');
+    if (eyedropper) eyedropper.classList.add('active');
+    engine.setTool('eyedropper');
+    document.getElementById('penSizeControl').style.display = 'none';
+    document.getElementById('eraserSizeControl').style.display = 'none';
+    alert('点击画布上的颜色像素来删除该颜色（仅当前帧）。');
+  }
+
   // ---- 工具栏 ----
   function bindToolbar() {
     document.querySelectorAll('[data-tool]').forEach(function(btn) {
@@ -639,7 +521,10 @@
           engine.clearCrop();
           document.getElementById('cropBar').style.display = 'none';
         }
-        document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
+        
+        document.querySelectorAll('[data-tool]').forEach(function(b) { 
+          b.classList.remove('active'); 
+        });
         btn.classList.add('active');
         engine.setTool(btn.dataset.tool);
         
@@ -670,13 +555,19 @@
     document.getElementById('btnClear').addEventListener('click', function() {
       if (confirm('清空当前帧？')) {
         engine.clear();
-        // 清空也是操作，保存快照
         var idx = anim.current;
         anim.frames[idx] = engine.pixels.slice();
+        if (window.layerSystem) {
+          var currentLayer = window.layerSystem.getCurrentLayer();
+          if (currentLayer) {
+            currentLayer.pixels = engine.pixels.slice();
+          }
+        }
         pushSnapshot();
         autoSave();
       }
     });
+
     document.getElementById('btnGrid').addEventListener('click', function(e) {
       engine.showGrid = !engine.showGrid;
       e.currentTarget.classList.toggle('active', engine.showGrid);
@@ -704,42 +595,63 @@
     }
   }
 
+  // ---- 图形子菜单 ----
+  function initShapeMenu() {
+    var shapeSubmenu = document.getElementById('shapeSubmenu');
+    var btnShape = document.getElementById('btnShape');
+    var shapeIcon = document.getElementById('shapeIcon');
+    
+    var shapeIcons = {
+      circle: '<circle cx="12" cy="12" r="8"/>',
+      ellipse: '<ellipse cx="12" cy="12" rx="9" ry="6"/>',
+      rect: '<rect x="4" y="5" width="16" height="14"/>',
+      star: '<path d="M12 3l2.5 6.5L21 10l-5 4.5L17.5 21 12 17.5 6.5 21 8 14.5 3 10l6.5-.5z" stroke-linejoin="round"/>',
+      diamond: '<path d="M12 3l8 9-8 9-8-9z" stroke-linejoin="round"/>',
+      heart: '<path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z" stroke-linejoin="round"/>'
+    };
+
+    if (!btnShape || !shapeSubmenu) return;
+
+    btnShape.addEventListener('click', function(e) {
+      e.stopPropagation();
+      if (engine.tool === 'shape') {
+        shapeSubmenu.classList.toggle('show');
+      } else {
+        if (window.SFX) window.SFX.select();
+        document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
+        btnShape.classList.add('active');
+        engine.setTool('shape');
+        shapeSubmenu.classList.add('show');
+      }
+    });
+
+    document.querySelectorAll('.shape-option').forEach(function(opt) {
+      opt.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var shapeType = opt.dataset.shape;
+        document.querySelectorAll('.shape-option').forEach(function(o) { o.classList.remove('active'); });
+        opt.classList.add('active');
+        if (shapeIcon && shapeIcons[shapeType]) {
+          shapeIcon.innerHTML = shapeIcons[shapeType];
+        }
+        engine.setShapeType(shapeType);
+        if (window.SFX) window.SFX.select();
+        document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
+        btnShape.classList.add('active');
+        engine.setTool('shape');
+        shapeSubmenu.classList.remove('show');
+      });
+    });
+
+    document.addEventListener('click', function(e) {
+      if (shapeSubmenu && !shapeSubmenu.contains(e.target) && e.target !== btnShape) {
+        shapeSubmenu.classList.remove('show');
+      }
+    });
+  }
+
   // ---- 帧列表 ----
   function bindFrames() {
-    var origAdd = anim.addFrame.bind(anim);
-    var origDup = anim.duplicateFrame.bind(anim);
-    var origDel = anim.deleteFrame.bind(anim);
-    var origMove = anim.moveFrame.bind(anim);
-
-    anim.addFrame = function() {
-      origAdd();
-      // 保存快照
-      pushSnapshot();
-      renderFrameList();
-      autoSave();
-    };
-
-    anim.duplicateFrame = function() {
-      origDup();
-      pushSnapshot();
-      renderFrameList();
-      autoSave();
-    };
-
-    anim.deleteFrame = function() {
-      origDel();
-      pushSnapshot();
-      renderFrameList();
-      autoSave();
-    };
-
-    anim.moveFrame = function(from, to) {
-      origMove(from, to);
-      pushSnapshot();
-      renderFrameList();
-      autoSave();
-    };
-
     document.getElementById('btnAddFrame').addEventListener('click', function() {
       anim.addFrame();
     });
@@ -1086,18 +998,14 @@
     }
     if (framesData.length === 0) { if (hint) hint.textContent = '没有有效图片'; return; }
   
-    // ★★★ 保持原色模式：不量化，直接采样 ★★★
-    // 如果用户勾选了"量化到调色板"，则进行量化；否则保持原色
     var extractedCount = 0;
     
     if (opts.quantize) {
-      // 量化模式：提取调色板并量化
       var palette = getActivePalette();
       var sampled = [];
       for (var dataIdx = 0; dataIdx < framesData.length; dataIdx++) {
         samplePixels(framesData[dataIdx].data, sampled, 8000);
       }
-      // 提取更多颜色（最多256色）
       var extracted = medianCut(sampled, 256);
       extractedCount = extracted.length;
       var existing = new Set(getActivePalette());
@@ -1110,7 +1018,6 @@
           added++;
         }
       }
-      // 如果提取的颜色太少，补充一些默认颜色
       if (extracted.length < 8) {
         var defaultColors = ['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
         for (var d = 0; d < defaultColors.length; d++) {
@@ -1127,21 +1034,16 @@
       if (hint) hint.textContent = '已提取 ' + extractedCount + ' 种主色调，' + added + ' 种已加入调色板...';
     }
   
-    // 处理每一帧
-    engine.pushHistory();
     for (var dataIdx2 = 0; dataIdx2 < framesData.length; dataIdx2++) {
       var data = framesData[dataIdx2];
       var pixels;
       
       if (opts.quantize) {
-        // 量化模式
         pixels = quantizeFrame(data.data, w, h, getActivePalette(), opts.dither);
       } else {
-        // ★★★ 保持原色模式：直接采样，不做量化 ★★★
         pixels = directSample(data.data, w, h);
       }
   
-      // 归一化颜色格式
       for (var p = 0; p < pixels.length; p++) {
         if (pixels[p] !== null) {
           var norm = normalizeColor(pixels[p]);
@@ -1152,10 +1054,27 @@
       if (dataIdx2 === 0) {
         anim.frames[anim.current] = pixels.slice();
         engine.loadFrame(pixels);
+        if (window.layerSystem) {
+          var currentLayer = window.layerSystem.getCurrentLayer();
+          if (currentLayer) {
+            currentLayer.pixels = pixels.slice();
+          }
+          window.layerSystem.switchToFrame(anim.current);
+          window.layerSystem._renderLayerList();
+        }
       } else {
-        anim.addFrame();
-        anim.frames[anim.current] = pixels.slice();
-        engine.loadFrame(pixels);
+        // 使用 addFrame 添加新帧 - 空白帧
+        var newFrame = anim.emptyPixel();
+        anim.frames.splice(anim.current + 1, 0, newFrame);
+        anim.current++;
+        engine.loadFrame(newFrame);
+        anim._renderOnion();
+        if (window.layerSystem) {
+          window.layerSystem.createBlankFrameLayers(anim.current);
+          window.layerSystem.switchToFrame(anim.current);
+          window.layerSystem._renderLayerList();
+        }
+        if (anim.onFramesChange) anim.onFramesChange();
       }
     }
     renderFrameList();
@@ -1376,37 +1295,37 @@
     var ratio = document.getElementById('ratioSelect').value;
     var dims = computeDims(res, ratio);
   
-    // 获取当前尺寸，用于判断是否真的改变了
     var currentW = engine.width;
     var currentH = engine.height;
     var sizeChanged = (dims.w !== currentW || dims.h !== currentH);
   
-    // 如果有内容且尺寸变化，给出提示
     if (sizeChanged) {
       anim.syncCurrentFrame();
       var hasContent = anim.frames.some(function(f) {
         return f.some(function(c) { return c !== null; });
       });
       if (hasContent && !confirm('调整画布尺寸将缩放现有内容（最近邻），确认继续？')) {
-        // 用户取消，但卡片仍然关闭
         closeSettingCardSafely();
         return;
       }
     }
   
-    // 停止播放
     if (anim.playing) {
       anim.stop();
       document.getElementById('btnPlay').textContent = '播放';
     }
   
-    // 如果尺寸确实变化了，执行调整
     if (sizeChanged) {
       var newPixelSize = computePixelSize(dims.w, dims.h);
       basePixelSize = newPixelSize;
       zoomLevel = 1.0;
       engine.resize(dims.w, dims.h, newPixelSize);
       anim.resize(dims.w, dims.h);
+      if (window.layerSystem) {
+        window.layerSystem.resize(dims.w, dims.h);
+        window.layerSystem.switchToFrame(anim.current);
+        window.layerSystem._renderLayerList();
+      }
   
       canvasW = dims.w;
       canvasH = dims.h;
@@ -1420,37 +1339,30 @@
       autoSave();
     }
   
-    // ★★★ 无论是否修改，都关闭卡片 ★★★
     closeSettingCardSafely();
   }
   
-  // ★★★ 安全关闭设置卡片的辅助函数 ★★★
   function closeSettingCardSafely() {
-    // 方式1：通过全局函数（如果存在）
     if (typeof window.closeSettingCard === 'function') {
       window.closeSettingCard();
       return;
     }
   
-    // 方式2：直接操作 DOM（备用方案）
     var overlay = document.getElementById('settingCardOverlay');
     if (overlay) {
       overlay.classList.remove('open');
     } else {
-      // 兼容旧版 ID
       var oldOverlay = document.getElementById('cardOverlay');
       if (oldOverlay) {
         oldOverlay.classList.remove('open');
       }
     }
   
-    // 取消背景模糊
     var mainContent = document.querySelector('.main-content');
     if (mainContent) {
       mainContent.classList.remove('blurred');
     }
   
-    // 方式3：关闭所有卡片（保险）
     document.querySelectorAll('.card-overlay').forEach(function(el) {
       el.classList.remove('open');
     });
@@ -1502,6 +1414,11 @@
       zoomLevel = 1.0;
       engine.applyCrop(rect.x1, rect.y1, rect.x2, rect.y2, newPixelSize);
       anim.crop(rect.x1, rect.y1, rect.x2, rect.y2);
+      if (window.layerSystem) {
+        window.layerSystem.resize(rect.w, rect.h);
+        window.layerSystem.switchToFrame(anim.current);
+        window.layerSystem._renderLayerList();
+      }
 
       canvasW = engine.width;
       canvasH = engine.height;
@@ -1511,7 +1428,6 @@
       updateSizeDisplay();
       updateZoomLabel();
       renderFrameList();
-      // 裁剪后保存快照
       pushSnapshot();
       exitCropMode();
     });
@@ -1549,7 +1465,6 @@
     var frames = anim.getAllFrames();
     if (frames.length < 1) { alert('没有可导出的帧'); return; }
 
-    // 获取作品名称并清理
     var title = document.getElementById('workTitle').value.trim() || '未命名作品';
     var safeTitle = title.replace(/[<>:"/\\|?*]/g, '_');
 
@@ -1657,7 +1572,6 @@
         if (workerUrl) { URL.revokeObjectURL(workerUrl); workerUrl = null; }
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        // 使用作品名称作为文件名
         var fileName = safeTitle + '.gif';
         a.download = fileName;
         a.click();
@@ -1679,7 +1593,7 @@
       btn.disabled = false;
       if (progressBar) progressBar.style.display = 'none';
     }
-}
+  }
 
   async function saveWork() {
     var title = document.getElementById('workTitle').value.trim() || '未命名作品';
@@ -1776,6 +1690,9 @@
 
         engine.resize(newW, newH, newPixelSize);
         anim.resize(newW, newH);
+        if (window.layerSystem) {
+          window.layerSystem.resize(newW, newH);
+        }
 
         anim.frames = project.frames.map(function(frame) {
           var newFrame = frame.slice();
@@ -1797,9 +1714,14 @@
         engine.loadFrame(anim.frames[0]);
         anim._renderOnion();
 
+        if (window.layerSystem) {
+          window.layerSystem._syncFromFrames(anim.frames);
+          window.layerSystem.switchToFrame(anim.current);
+          window.layerSystem._renderLayerList();
+        }
+
         updateSizeDisplay();
         renderFrameList();
-        // 加载后清空历史
         undoStack = [];
         redoStack = [];
         pushSnapshot();
@@ -1837,6 +1759,482 @@
     ratioSel.value = bestRatio;
   }
 
+  // ---- 初始化 ----
+  async function init() {
+
+    var res = parseInt(document.getElementById('resolutionSelect').value);
+    var ratio = document.getElementById('ratioSelect').value;
+    var dims = computeDims(res, ratio);
+    canvasW = dims.w;
+    canvasH = dims.h;
+
+    var canvas = document.getElementById('drawCanvas');
+    basePixelSize = computePixelSize(canvasW, canvasH);
+    engine = new CanvasEngine(canvas, canvasW, canvasH, basePixelSize);
+    anim = new Animation(engine, canvasW, canvasH);
+
+    // ★★★ 绘制完成时保存快照 ★★★
+    engine.onDrawEnd = function(pixelsCopy) {
+      var idx = anim.current;
+      anim.frames[idx] = pixelsCopy.slice();
+      if (window.layerSystem) {
+        var currentLayer = window.layerSystem.getCurrentLayer();
+        if (currentLayer) {
+          currentLayer.pixels = pixelsCopy.slice();
+        }
+      }
+      pushSnapshot();
+    };
+
+    engine.onColorPick = function(color) {
+      var targetColor = normalizeColor(color);
+      if (isDeletingColor) {
+        isDeletingColor = false;
+        if (!targetColor) {
+          alert('无法识别该颜色');
+          switchToPencil();
+          return;
+        }
+        anim.syncCurrentFrame();
+        var frame = anim.frames[anim.current];
+        if (!confirm('确定要删除当前帧中所有「' + targetColor + '」像素吗？')) {
+          switchToPencil();
+          return;
+        }
+        var count = 0;
+        for (var i = 0; i < frame.length; i++) {
+          var pixelNorm = normalizeColor(frame[i]);
+          if (pixelNorm !== null && pixelNorm === targetColor) {
+            frame[i] = null;
+            count++;
+          }
+        }
+        if (count > 0) {
+          engine.loadFrame(frame);
+          engine.render();
+          renderFrameList();
+          if (window.layerSystem) {
+            var currentLayer = window.layerSystem.getCurrentLayer();
+            if (currentLayer) {
+              currentLayer.pixels = frame.slice();
+            }
+          }
+          alert('已删除 ' + count + ' 个像素。');
+          pushSnapshot();
+        } else {
+          alert('当前帧中没有该颜色。');
+        }
+        switchToPencil();
+        return;
+      }
+
+      if (targetColor) {
+        addToTempPalette(targetColor);
+        document.getElementById('colorPicker').value = targetColor;
+        engine.setColor(targetColor);
+        document.querySelectorAll('.swatch').forEach(function(s) { s.classList.remove('active'); });
+        var swatches = document.querySelectorAll('.swatch');
+        for (var i = 0; i < swatches.length; i++) {
+          if (swatches[i].style.background === targetColor) {
+            swatches[i].classList.add('active');
+            break;
+          }
+        }
+        switchToPencil();
+      }
+    };
+
+    buildPalette();
+    bindToolbar();
+    bindFrames();
+    bindPlayback();
+    bindExport();
+    bindImport();
+    bindCanvasSize();
+    bindCrop();
+    bindColorWheel();
+    bindPaletteActions();
+    bindZoom();
+
+    var fitModeSelect = document.getElementById('fitMode');
+    if (fitModeSelect) fitModeSelect.value = 'contain';
+
+    for (var i = 0; i < anim.frames.length; i++) {
+      normalizeFrame(anim.frames[i]);
+    }
+
+    anim.onFramesChange = renderFrameList;
+    anim.onFrameSelect = function(i) { updateFrameListSelection(i); };
+    renderFrameList();
+    updateSizeDisplay();
+    updateZoomLabel();
+    renderTempPalette();
+
+    await loadProject();
+
+    if (anim.frames.length === 0) {
+      var empty = new Array(canvasW * canvasH).fill(null);
+      anim.frames = [empty];
+      anim.current = 0;
+      engine.loadFrame(empty);
+      engine.render();
+      renderFrameList();
+    }
+
+    document.getElementById('btnSaveDraft').addEventListener('click', function() {
+      saveDraftLocally(true);
+    });
+    document.getElementById('btnSaveProject').addEventListener('click', function() {
+      saveProjectToServer(true);
+    });
+
+    engine.render();
+    pushSnapshot();
+
+    // 初始化图层系统（每帧独立）
+    window.layerSystem = new LayerSystem(engine, anim);
+    window.layerSystem._syncFromFrames(anim.frames);
+    window.layerSystem.switchToFrame(anim.current);
+    window.layerSystem._renderLayerList();
+
+    // ---- 图层切换按钮（独立于工具切换，类似网格按钮） ----
+    var layerToggleBtn = document.getElementById('btnToggleLayers');
+    if (layerToggleBtn) {
+      layerToggleBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var isVisible = window.layerSystem.toggleVisible();
+        this.classList.toggle('active', isVisible);
+        if (isVisible && window.layerSystem) {
+          window.layerSystem.switchToFrame(anim.current);
+          window.layerSystem._renderLayerList();
+        }
+      });
+      if (window.layerSystem && window.layerSystem.isVisible) {
+        layerToggleBtn.classList.add('active');
+      }
+    }
+
+    // ---- 重写帧操作方法，支持每帧独立图层 ----
+
+    // 选择帧
+    var origSelectFrame = anim.selectFrame.bind(anim);
+    anim.selectFrame = function(index) {
+      if (index < 0 || index >= this.frames.length) return;
+      this.frames[this.current] = engine.getPixels();
+      this.current = index;
+      engine.loadFrame(this.frames[index]);
+      this._renderOnion();
+      if (window.layerSystem) {
+        window.layerSystem.switchToFrame(index);
+        window.layerSystem._renderLayerList();
+      }
+      if (this.onFrameSelect) this.onFrameSelect(index);
+    };
+
+    // 添加帧 - 新建空白帧，只有空图层
+    var origAddFrame = anim.addFrame.bind(anim);
+    anim.addFrame = function() {
+      this.frames[this.current] = engine.getPixels();
+      var newFrame = this.emptyPixel();
+      this.frames.splice(this.current + 1, 0, newFrame);
+      this.current++;
+      engine.loadFrame(newFrame);
+      this._renderOnion();
+      // 新建空白帧的图层（只有空图层）
+      if (window.layerSystem) {
+        window.layerSystem.createBlankFrameLayers(this.current);
+        window.layerSystem.switchToFrame(this.current);
+        window.layerSystem._renderLayerList();
+      }
+      if (this.onFramesChange) this.onFramesChange();
+      pushSnapshot();
+      renderFrameList();
+      autoSave();
+    };
+
+    // 复制帧 - 复制所有图层
+    var origDupFrame = anim.duplicateFrame.bind(anim);
+    anim.duplicateFrame = function() {
+      this.frames[this.current] = engine.getPixels();
+      var copy = this.frames[this.current].slice();
+      this.frames.splice(this.current + 1, 0, copy);
+      var oldCurrent = this.current;
+      this.current++;
+      engine.loadFrame(copy);
+      this._renderOnion();
+      if (window.layerSystem) {
+        window.layerSystem.duplicateFrameLayers(oldCurrent, this.current);
+        window.layerSystem.switchToFrame(this.current);
+        window.layerSystem._renderLayerList();
+      }
+      if (this.onFramesChange) this.onFramesChange();
+      pushSnapshot();
+      renderFrameList();
+      autoSave();
+    };
+
+    // 删除帧
+    var origDeleteFrame = anim.deleteFrame.bind(anim);
+    anim.deleteFrame = function() {
+      if (this.frames.length <= 1) return;
+      var deletedIndex = this.current;
+      this.frames.splice(this.current, 1);
+      if (this.current >= this.frames.length) this.current = this.frames.length - 1;
+      engine.loadFrame(this.frames[this.current]);
+      this._renderOnion();
+      if (window.layerSystem) {
+        window.layerSystem.removeFrameLayers(deletedIndex);
+        window.layerSystem.switchToFrame(this.current);
+        window.layerSystem._renderLayerList();
+      }
+      if (this.onFramesChange) this.onFramesChange();
+      pushSnapshot();
+      renderFrameList();
+      autoSave();
+    };
+
+    // 移动帧
+    var origMoveFrame = anim.moveFrame.bind(anim);
+    anim.moveFrame = function(from, to) {
+      if (from === to || from < 0 || to < 0 || from >= this.frames.length || to >= this.frames.length) return;
+      this.frames[this.current] = engine.getPixels();
+      var [moved] = this.frames.splice(from, 1);
+      this.frames.splice(to, 0, moved);
+      this.current = to;
+      engine.loadFrame(this.frames[this.current]);
+      this._renderOnion();
+      // 移动图层数据
+      if (window.layerSystem) {
+        var layers = window.layerSystem.frameLayers;
+        var movedLayers = layers[from];
+        delete layers[from];
+        // 重新索引
+        var newLayers = {};
+        var idx = 0;
+        var keys = Object.keys(layers).sort(function(a,b) { return parseInt(a) - parseInt(b); });
+        for (var k = 0; k < keys.length; k++) {
+          var key = keys[k];
+          var keyNum = parseInt(key);
+          if (keyNum === to && from < to) {
+            newLayers[idx] = movedLayers;
+            idx++;
+          }
+          newLayers[idx] = layers[key];
+          idx++;
+        }
+        if (from > to) {
+          newLayers = {};
+          idx = 0;
+          for (var k2 = 0; k2 < keys.length; k2++) {
+            var key2 = keys[k2];
+            var keyNum2 = parseInt(key2);
+            if (keyNum2 === to) {
+              newLayers[idx] = movedLayers;
+              idx++;
+            }
+            newLayers[idx] = layers[key2];
+            idx++;
+          }
+        }
+        window.layerSystem.frameLayers = newLayers;
+        window.layerSystem.switchToFrame(this.current);
+        window.layerSystem._renderLayerList();
+      }
+      if (this.onFramesChange) this.onFramesChange();
+      pushSnapshot();
+      renderFrameList();
+      autoSave();
+    };
+
+    window.engine = engine;
+    window.anim = anim;
+    window.renderFrameList = renderFrameList;
+    window.pushSnapshot = pushSnapshot;
+    window.autoSave = autoSave;
+
+    window.__engine = engine;
+    window.__anim = anim;
+
+    // ---- 音效集成 ----
+    function initSoundIntegration() {
+      if (typeof window.SFX === 'undefined') {
+        console.warn('音效系统未加载');
+        return;
+      }
+      
+      var SFX = window.SFX;
+
+      var origSetTool = engine.setTool.bind(engine);
+      engine.setTool = function(tool) {
+        var oldTool = this.tool;
+        origSetTool(tool);
+        if (tool !== oldTool) {
+          SFX.select();
+        }
+      };
+
+      var origOnDrawEnd = engine.onDrawEnd;
+      engine.onDrawEnd = function(pixelsCopy) {
+        if (this.tool === 'eraser') {
+          SFX.erase();
+        } else if (this.tool === 'pencil') {
+          SFX.pen();
+        } else if (this.tool === 'fill') {
+          SFX.fill();
+        } else if (this.tool === 'eyedropper') {
+          SFX.eyedropper();
+        } else {
+          SFX.pen();
+        }
+        if (origOnDrawEnd) {
+          origOnDrawEnd.call(this, pixelsCopy);
+        }
+      };
+
+      var origOnColorPick = engine.onColorPick;
+      engine.onColorPick = function(color) {
+        SFX.pick();
+        if (origOnColorPick) {
+          origOnColorPick.call(this, color);
+        }
+      };
+
+      // 添加帧 - 新建空白帧
+      var origAddFrame = anim.addFrame.bind(anim);
+      anim.addFrame = function() {
+        this.frames[this.current] = engine.getPixels();
+        var newFrame = this.emptyPixel();
+        this.frames.splice(this.current + 1, 0, newFrame);
+        this.current++;
+        engine.loadFrame(newFrame);
+        this._renderOnion();
+        if (window.layerSystem) {
+          window.layerSystem.createBlankFrameLayers(this.current);
+          window.layerSystem.switchToFrame(this.current);
+          window.layerSystem._renderLayerList();
+        }
+        if (this.onFramesChange) this.onFramesChange();
+        pushSnapshot();
+        renderFrameList();
+        SFX.add();
+        autoSave();
+      };
+
+      // 复制帧 - 复制所有图层
+      var origDupFrame = anim.duplicateFrame.bind(anim);
+      anim.duplicateFrame = function() {
+        this.frames[this.current] = engine.getPixels();
+        var copy = this.frames[this.current].slice();
+        this.frames.splice(this.current + 1, 0, copy);
+        var oldCurrent = this.current;
+        this.current++;
+        engine.loadFrame(copy);
+        this._renderOnion();
+        if (window.layerSystem) {
+          window.layerSystem.duplicateFrameLayers(oldCurrent, this.current);
+          window.layerSystem.switchToFrame(this.current);
+          window.layerSystem._renderLayerList();
+        }
+        if (this.onFramesChange) this.onFramesChange();
+        pushSnapshot();
+        renderFrameList();
+        SFX.add();
+        autoSave();
+      };
+
+      // 删除帧
+      var origDeleteFrame = anim.deleteFrame.bind(anim);
+      anim.deleteFrame = function() {
+        if (this.frames.length <= 1) {
+          SFX.error();
+          return;
+        }
+        var deletedIndex = this.current;
+        this.frames.splice(this.current, 1);
+        if (this.current >= this.frames.length) this.current = this.frames.length - 1;
+        engine.loadFrame(this.frames[this.current]);
+        this._renderOnion();
+        if (window.layerSystem) {
+          window.layerSystem.removeFrameLayers(deletedIndex);
+          window.layerSystem.switchToFrame(this.current);
+          window.layerSystem._renderLayerList();
+        }
+        if (this.onFramesChange) this.onFramesChange();
+        pushSnapshot();
+        renderFrameList();
+        SFX.delete();
+        autoSave();
+      };
+
+      var origSelectFrame = anim.selectFrame.bind(anim);
+      anim.selectFrame = function(index) {
+        if (index !== this.current) {
+          this.frames[this.current] = engine.getPixels();
+          this.current = index;
+          engine.loadFrame(this.frames[index]);
+          this._renderOnion();
+          if (window.layerSystem) {
+            window.layerSystem.switchToFrame(index);
+            window.layerSystem._renderLayerList();
+          }
+          if (this.onFrameSelect) this.onFrameSelect(index);
+          SFX.frameSelect();
+        } else {
+          origSelectFrame(index);
+        }
+      };
+
+      var origPlay = anim.play.bind(anim);
+      anim.play = function() {
+        origPlay();
+        SFX.play();
+      };
+
+      var origStop = anim.stop.bind(anim);
+      anim.stop = function() {
+        origStop();
+        SFX.stop();
+      };
+
+      var origClear = engine.clear.bind(engine);
+      engine.clear = function() {
+        origClear();
+        SFX.delete();
+        if (window.layerSystem) {
+          var currentLayer = window.layerSystem.getCurrentLayer();
+          if (currentLayer) {
+            currentLayer.pixels = engine.getPixels();
+          }
+        }
+      };
+
+      document.addEventListener('click', function(e) {
+        var swatch = e.target.closest('.swatch, .temp-swatch');
+        if (swatch) {
+          SFX.pick();
+        }
+      });
+
+      document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.action-btn, .tool-btn, .auth-btn, .zoom-btn, .cw-add-btn');
+        if (btn) {
+          var skipIds = ['btnPlay', 'btnUndo', 'btnRedo', 'btnAddFrame', 'btnDupFrame', 'btnDelFrame',
+                        'btnZoomIn', 'btnZoomOut', 'btnCropConfirm', 'btnCropCancel',
+                        'btnColorWheel', 'cwClose', 'open-settingcard-btn', 'settingCardClose',
+                        'open-picturecard-btn', 'pictureCardClose'];
+          if (skipIds.indexOf(btn.id) === -1 && !btn.closest('[data-tool]')) {
+            SFX.click();
+          }
+        }
+      });
+
+      console.log('🔊 音效已集成');
+    }
+
+    initSoundIntegration();
+    initShapeMenu();
+  }
+
   // 启动
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() {
@@ -1846,44 +2244,3 @@
     init().catch(function(e) { console.error(e); });
   }
 })();
-
-
-
-//add
-
-const overlay = document.getElementById('cardOverlay');
-  const openBtn = document.getElementById('open-settingcard-btn');
-  const closeBtn = document.getElementById('cardClose');
-
-  function openCard() {
-    overlay.classList.add('open');
-    document.querySelector('.main-content')?.classList.add('blurred');
-  }
-
-  function closeCard() {
-    overlay.classList.remove('open');
-    document.querySelector('.main-content')?.classList.remove('blurred');
-  }
-
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeCard();
-  });
-
-  openBtn.addEventListener('click', openCard);
-  closeBtn.addEventListener('click', closeCard);
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeCard();
-  });
-
-  // ★★★ 启动代码 ★★★
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-      init().catch(function(e) { console.error(e); });
-    });
-  } else {
-    init().catch(function(e) { console.error(e); });
-  }
-
-
-

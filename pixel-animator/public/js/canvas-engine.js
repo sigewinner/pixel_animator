@@ -36,10 +36,17 @@ class CanvasEngine {
 
     this.onionFrame = null;
 
-    // ★★★ 绘制完成回调 ★★★
+    // ★★★ 图形工具相关 ★★★
+    this.shapeType = 'circle';
+    this.shapeStart = null;
+    this.shapeSnapshot = null;
+    this._lastMousePos = { x: 0, y: 0 };
+    this._shapePreviewDrawn = false;
+
+    // 绘制回调
     this.onDrawEnd = null;
-    // ★★★ 绘制开始回调 ★★★
     this.onDrawStart = null;
+    this.onColorPick = null;
 
     this._bindEvents();
     this._updateCursor();
@@ -72,6 +79,10 @@ class CanvasEngine {
   }
 
   setTool(tool) {
+    // 如果正在绘制图形，先完成
+    if (this.isDrawing && this.tool === 'shape') {
+      this._finishShape();
+    }
     this.tool = tool;
     this.lastDrawX = -1;
     this.lastDrawY = -1;
@@ -103,6 +114,13 @@ class CanvasEngine {
   setOnionFrame(frame) {
     this.onionFrame = frame;
     this.render();
+  }
+
+  setShapeType(type) {
+    const validTypes = ['circle', 'ellipse', 'rect', 'star', 'diamond', 'heart'];
+    if (validTypes.includes(type)) {
+      this.shapeType = type;
+    }
   }
 
   _updateCursor() {
@@ -226,10 +244,13 @@ class CanvasEngine {
   }
 
   _bindEvents() {
+    const self = this;
+
     const onDown = (e) => {
       e.preventDefault();
       const { x, y } = this._getPixelCoord(e);
 
+      // 裁剪工具
       if (this.tool === 'crop') {
         this.isDrawing = true;
         this.cropStart = { x, y };
@@ -240,6 +261,7 @@ class CanvasEngine {
         return;
       }
 
+      // 吸管工具
       if (this.tool === 'eyedropper') {
         const color = this._getPixelColor(x, y);
         if (color) {
@@ -249,60 +271,82 @@ class CanvasEngine {
         return;
       }
 
+      // ★★★ 图形工具 - 记录起点 ★★★
+      if (this.tool === 'shape') {
+        this.isDrawing = true;
+        this.shapeStart = { x, y };
+        this.shapeSnapshot = this.pixels.slice();
+        this._shapePreviewDrawn = false;
+        if (this.onDrawStart) this.onDrawStart();
+        return;
+      }
+
+      // 线条工具（预览模式）
+      if (this.tool === 'line') {
+        this.isDrawing = true;
+        this.previewStart = { x, y };
+        this.previewSnapshot = this.pixels.slice();
+        return;
+      }
+
+      // 普通绘制工具
       this.isDrawing = true;
       this.pushHistory();
       this.lastDrawX = -1;
       this.lastDrawY = -1;
-
-      // ★★★ 绘制开始回调 ★★★
-      if (this.onDrawStart) {
-        this.onDrawStart();
-      }
-
-      if (this.tool === 'line' || this.tool === 'circle') {
-        this.previewStart = { x, y };
-        this.previewSnapshot = this.pixels.slice();
-      } else {
-        this._applyTool(x, y);
-        this.lastDrawX = x;
-        this.lastDrawY = y;
-      }
+      if (this.onDrawStart) this.onDrawStart();
+      this._applyTool(x, y);
+      this.lastDrawX = x;
+      this.lastDrawY = y;
     };
 
     const onMove = (e) => {
       if (!this.isDrawing) return;
       const { x, y } = this._getPixelCoord(e);
+      
+      this._lastMousePos = { x, y };
 
+      // 裁剪工具
       if (this.tool === 'crop') {
         this.cropEnd = { x, y };
         this.render();
         return;
       }
 
+      // 吸管工具
       if (this.tool === 'eyedropper') return;
 
+      // ★★★ 图形工具 - 实时预览 ★★★
+      if (this.tool === 'shape' && this.shapeStart) {
+        // 从快照恢复
+        this.pixels = this.shapeSnapshot.slice();
+        this._drawShapeOutline(this.shapeStart.x, this.shapeStart.y, x, y, this.color);
+        this._shapePreviewDrawn = true;
+        this.render();
+        return;
+      }
+
+      // 线条工具
       if (this.tool === 'line') {
         this.pixels = this.previewSnapshot.slice();
         this._drawLinePixels(this.previewStart.x, this.previewStart.y, x, y, this.color);
         this.render();
-      } else if (this.tool === 'circle') {
-        this.pixels = this.previewSnapshot.slice();
-        const r = Math.round(Math.hypot(x - this.previewStart.x, y - this.previewStart.y));
-        this._drawCirclePixels(this.previewStart.x, this.previewStart.y, r, this.color);
-        this.render();
-      } else {
-        if (this.lastDrawX >= 0 && this.lastDrawY >= 0) {
-          this._drawLinePixels(this.lastDrawX, this.lastDrawY, x, y, this.tool === 'eraser' ? null : this.color);
-        } else {
-          this._applyTool(x, y);
-        }
-        this.lastDrawX = x;
-        this.lastDrawY = y;
-        this.render();
+        return;
       }
+
+      // 普通绘制
+      if (this.lastDrawX >= 0 && this.lastDrawY >= 0) {
+        this._drawLinePixels(this.lastDrawX, this.lastDrawY, x, y, this.tool === 'eraser' ? null : this.color);
+      } else {
+        this._applyTool(x, y);
+      }
+      this.lastDrawX = x;
+      this.lastDrawY = y;
+      this.render();
     };
 
     const onUp = () => {
+      // 裁剪工具
       if (this.tool === 'crop' && this.isDrawing) {
         this.isDrawing = false;
         const rect = this.getCropRect();
@@ -316,12 +360,58 @@ class CanvasEngine {
         return;
       }
 
+      // ★★★ 图形工具 - 完成绘制 ★★★
+      if (this.tool === 'shape' && this.isDrawing && this.shapeStart) {
+        const { x, y } = this._lastMousePos;
+        const dx = Math.abs(x - this.shapeStart.x);
+        const dy = Math.abs(y - this.shapeStart.y);
+        
+        // 从快照恢复
+        this.pixels = this.shapeSnapshot.slice();
+        
+        if (dx > 0 || dy > 0) {
+          // 有拖动，绘制图形轮廓
+          this._drawShapeOutline(this.shapeStart.x, this.shapeStart.y, x, y, this.color);
+        } else {
+          // 点击没有拖动，画一个点
+          this._drawDot(this.shapeStart.x, this.shapeStart.y, this.color);
+        }
+        
+        // 图形绘制完成后保存历史
+        // 注意：这里不调用 pushHistory，因为已经在 onDown 中 push 了
+        // 但我们需要确保 onDrawEnd 被调用
+        if (this.onDrawEnd) {
+          this.onDrawEnd(this.pixels.slice());
+        }
+        
+        this.isDrawing = false;
+        this.shapeStart = null;
+        this.shapeSnapshot = null;
+        this._shapePreviewDrawn = false;
+        this.render();
+        return;
+      }
+
+      // 线条工具 - 完成绘制
+      if (this.tool === 'line' && this.isDrawing) {
+        this.isDrawing = false;
+        this.previewStart = null;
+        this.previewSnapshot = null;
+        this.lastDrawX = -1;
+        this.lastDrawY = -1;
+        if (this.onDrawEnd) {
+          this.onDrawEnd(this.pixels.slice());
+        }
+        this.render();
+        return;
+      }
+
       // 判断是否在绘制中（非预览工具，非裁剪工具）
       const wasDrawing = this.isDrawing && 
                           this.tool !== 'line' && 
-                          this.tool !== 'circle' && 
                           this.tool !== 'crop' &&
-                          this.tool !== 'eyedropper';
+                          this.tool !== 'eyedropper' &&
+                          this.tool !== 'shape';
 
       this.isDrawing = false;
       this.previewStart = null;
@@ -329,11 +419,8 @@ class CanvasEngine {
       this.lastDrawX = -1;
       this.lastDrawY = -1;
 
-      // ★★★ 绘制完成回调 ★★★
       if (wasDrawing && this.onDrawEnd) {
-        // 确保 pixels 是最新状态
-        const pixelsCopy = this.pixels.slice();
-        this.onDrawEnd(pixelsCopy);
+        this.onDrawEnd(this.pixels.slice());
       }
     };
 
@@ -352,6 +439,28 @@ class CanvasEngine {
       onMove({ clientX: t.clientX, clientY: t.clientY });
     });
     this.canvas.addEventListener('touchend', onUp);
+  }
+
+  _finishShape() {
+    if (this.isDrawing && this.tool === 'shape' && this.shapeStart) {
+      const { x, y } = this._lastMousePos;
+      this.pixels = this.shapeSnapshot.slice();
+      const dx = Math.abs(x - this.shapeStart.x);
+      const dy = Math.abs(y - this.shapeStart.y);
+      if (dx > 0 || dy > 0) {
+        this._drawShapeOutline(this.shapeStart.x, this.shapeStart.y, x, y, this.color);
+      } else {
+        this._drawDot(this.shapeStart.x, this.shapeStart.y, this.color);
+      }
+      if (this.onDrawEnd) {
+        this.onDrawEnd(this.pixels.slice());
+      }
+      this.isDrawing = false;
+      this.shapeStart = null;
+      this.shapeSnapshot = null;
+      this._shapePreviewDrawn = false;
+      this.render();
+    }
   }
 
   _getPixelColor(x, y) {
@@ -455,6 +564,43 @@ class CanvasEngine {
     }
   }
 
+  // ★★★ 绘制各种图形的描边（轮廓） ★★★
+  _drawShapeOutline(x1, y1, x2, y2, color) {
+    const left = Math.min(x1, x2);
+    const right = Math.max(x1, x2);
+    const top = Math.min(y1, y2);
+    const bottom = Math.max(y1, y2);
+    const w = right - left + 1;
+    const h = bottom - top + 1;
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
+    const radiusX = Math.abs(x2 - x1) / 2;
+    const radiusY = Math.abs(y2 - y1) / 2;
+    
+    switch (this.shapeType) {
+      case 'rect':
+        this._drawRectOutline(left, top, w, h, color);
+        break;
+      case 'ellipse':
+        this._drawEllipseOutline(cx, cy, radiusX, radiusY, color);
+        break;
+      case 'star':
+        this._drawStarOutline(cx, cy, Math.min(w, h) / 2, color);
+        break;
+      case 'diamond':
+        this._drawDiamondOutline(cx, cy, radiusX, radiusY, color);
+        break;
+      case 'heart':
+        this._drawHeartOutline(cx, cy, Math.min(radiusX, radiusY), color);
+        break;
+      case 'circle':
+      default:
+        const radius = Math.round(Math.hypot(x2 - x1, y2 - y1));
+        this._drawCirclePixels(x1, y1, radius, color);
+        break;
+    }
+  }
+
   _drawCirclePixels(cx, cy, r, color) {
     if (r < 0) r = 0;
     if (r === 0) {
@@ -479,6 +625,150 @@ class CanvasEngine {
       y++;
       if (err <= 0) { err += 2 * y + 1; }
       if (err > 0) { x--; err -= 2 * x + 1; }
+    }
+  }
+
+  _drawRectOutline(x, y, w, h, color) {
+    // 上边
+    for (let dx = 0; dx < w; dx++) {
+      this._drawDot(x + dx, y, color);
+    }
+    // 下边
+    for (let dx = 0; dx < w; dx++) {
+      this._drawDot(x + dx, y + h - 1, color);
+    }
+    // 左边
+    for (let dy = 0; dy < h; dy++) {
+      this._drawDot(x, y + dy, color);
+    }
+    // 右边
+    for (let dy = 0; dy < h; dy++) {
+      this._drawDot(x + w - 1, y + dy, color);
+    }
+  }
+
+  _drawEllipseOutline(cx, cy, rx, ry, color) {
+    rx = Math.abs(rx);
+    ry = Math.abs(ry);
+    if (rx < 1 || ry < 1) {
+      this._drawDot(Math.round(cx), Math.round(cy), color);
+      return;
+    }
+
+    let x = 0, y = Math.round(ry);
+    let rx2 = rx * rx;
+    let ry2 = ry * ry;
+    let p1 = ry2 - rx2 * ry + 0.25 * rx2;
+    
+    while (2 * ry2 * x < 2 * rx2 * y) {
+      this._drawEllipsePoints(cx, cy, x, y, color);
+      x++;
+      if (p1 < 0) {
+        p1 += 2 * ry2 * x + ry2;
+      } else {
+        y--;
+        p1 += 2 * ry2 * x - 2 * rx2 * y + ry2;
+      }
+    }
+    
+    let p2 = ry2 * (x + 0.5) * (x + 0.5) + rx2 * (y - 1) * (y - 1) - rx2 * ry2;
+    
+    while (y >= 0) {
+      this._drawEllipsePoints(cx, cy, x, y, color);
+      y--;
+      if (p2 > 0) {
+        p2 -= 2 * rx2 * y + rx2;
+      } else {
+        x++;
+        p2 += 2 * ry2 * x - 2 * rx2 * y + rx2;
+      }
+    }
+  }
+
+  _drawEllipsePoints(cx, cy, x, y, color) {
+    const points = [
+      [cx + x, cy + y], [cx - x, cy + y],
+      [cx + x, cy - y], [cx - x, cy - y]
+    ];
+    for (const [px, py] of points) {
+      if (px >= 0 && px < this.width && py >= 0 && py < this.height) {
+        this._drawDot(Math.round(px), Math.round(py), color);
+      }
+    }
+  }
+
+  _drawStarOutline(cx, cy, radius, color) {
+    if (radius < 1) {
+      this._drawDot(Math.round(cx), Math.round(cy), color);
+      return;
+    }
+    
+    const points = [];
+    const outerR = radius;
+    const innerR = radius * 0.4;
+    
+    for (let i = 0; i < 10; i++) {
+      const angle = (i * Math.PI / 5) - Math.PI / 2;
+      const r = i % 2 === 0 ? outerR : innerR;
+      points.push({
+        x: cx + Math.cos(angle) * r,
+        y: cy + Math.sin(angle) * r
+      });
+    }
+    
+    for (let i = 0; i < points.length; i++) {
+      const j = (i + 1) % points.length;
+      this._drawLinePixels(
+        Math.round(points[i].x), Math.round(points[i].y),
+        Math.round(points[j].x), Math.round(points[j].y),
+        color
+      );
+    }
+  }
+
+  _drawDiamondOutline(cx, cy, rx, ry, color) {
+    rx = Math.abs(rx);
+    ry = Math.abs(ry);
+    if (rx < 1 || ry < 1) {
+      this._drawDot(Math.round(cx), Math.round(cy), color);
+      return;
+    }
+    
+    const p1 = { x: cx, y: cy - ry };
+    const p2 = { x: cx + rx, y: cy };
+    const p3 = { x: cx, y: cy + ry };
+    const p4 = { x: cx - rx, y: cy };
+    
+    this._drawLinePixels(Math.round(p1.x), Math.round(p1.y), Math.round(p2.x), Math.round(p2.y), color);
+    this._drawLinePixels(Math.round(p2.x), Math.round(p2.y), Math.round(p3.x), Math.round(p3.y), color);
+    this._drawLinePixels(Math.round(p3.x), Math.round(p3.y), Math.round(p4.x), Math.round(p4.y), color);
+    this._drawLinePixels(Math.round(p4.x), Math.round(p4.y), Math.round(p1.x), Math.round(p1.y), color);
+  }
+
+  _drawHeartOutline(cx, cy, size, color) {
+    if (size < 1) {
+      this._drawDot(Math.round(cx), Math.round(cy), color);
+      return;
+    }
+    
+    const step = 0.1;
+    const points = [];
+    
+    for (let t = 0; t <= 2 * Math.PI; t += step) {
+      const x = 16 * Math.pow(Math.sin(t), 3);
+      const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+      points.push({
+        x: cx + x / 16 * size,
+        y: cy - y / 16 * size
+      });
+    }
+    
+    for (let i = 0; i < points.length - 1; i++) {
+      this._drawLinePixels(
+        Math.round(points[i].x), Math.round(points[i].y),
+        Math.round(points[i + 1].x), Math.round(points[i + 1].y),
+        color
+      );
     }
   }
 
