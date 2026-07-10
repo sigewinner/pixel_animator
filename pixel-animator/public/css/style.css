@@ -209,6 +209,57 @@
 .auth-footer a { color: var(--accent); text-decoration: none; }
 .auth-footer a:hover { text-decoration: underline; }
 
+/* 更换背景按钮 */
+.bg-changer {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+.bg-changer-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(20,20,42,0.75);
+  backdrop-filter: blur(8px);
+  border: 2px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+.bg-changer-btn:hover {
+  background: rgba(20,20,42,0.92);
+  color: var(--text);
+  border-color: var(--primary);
+}
+.bg-changer-btn svg { flex-shrink: 0; }
+.bg-reset-btn {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(248,113,113,0.15);
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(248,113,113,0.4);
+  color: var(--danger);
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+.bg-reset-btn:hover {
+  background: rgba(248,113,113,0.25);
+  border-color: var(--danger);
+}
+.bg-reset-btn.show { display: flex; }
+
 /* ==================== 编辑器主体 ==================== */
 
 body.editor {
