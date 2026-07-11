@@ -355,6 +355,43 @@
       this._afterChange();
     }
 
+    // ★★★ 镜像翻转当前帧（所有图层） ★★★
+    flipFrame(axis) {
+      const w = this.engine.width;
+      const h = this.engine.height;
+      const frameIdx = this.currentFrame;
+
+      if (!this.framePixelData[frameIdx]) return;
+
+      for (let i = 0; i < this.framePixelData[frameIdx].length; i++) {
+        const oldPx = this.framePixelData[frameIdx][i];
+        if (!oldPx) continue;
+        const newPx = new Array(w * h).fill(null);
+
+        if (axis === 'horizontal') {
+          // 水平镜像：左右翻转
+          for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+              newPx[y * w + (w - 1 - x)] = oldPx[y * w + x];
+            }
+          }
+        } else {
+          // 垂直镜像：上下翻转
+          for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+              newPx[(h - 1 - y) * w + x] = oldPx[y * w + x];
+            }
+          }
+        }
+
+        this.framePixelData[frameIdx][i] = newPx;
+      }
+
+      // 重新关联实时引用并刷新合成图
+      this._wireLiveRefs();
+      this._afterChange();
+    }
+
     // ---- 保存当前帧的图层像素到 framePixelData ----
     saveCurrentFrameLayers() {
       if (!this.framePixelData[this.currentFrame]) {

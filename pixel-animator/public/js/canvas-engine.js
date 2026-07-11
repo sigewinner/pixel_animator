@@ -963,6 +963,35 @@ class CanvasEngine {
     this.lastDrawY = -1;
     this.render();
   }
+
+  // ★★★ 画布镜像：水平（左右翻转）或垂直（上下翻转） ★★★
+  flip(axis) {
+    const w = this.width;
+    const h = this.height;
+    const oldPixels = this.pixels;
+    const newPixels = new Array(w * h).fill(null);
+
+    if (axis === 'horizontal') {
+      // 水平镜像：左右翻转
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          newPixels[y * w + (w - 1 - x)] = oldPixels[y * w + x];
+        }
+      }
+    } else {
+      // 垂直镜像：上下翻转
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          newPixels[(h - 1 - y) * w + x] = oldPixels[y * w + x];
+        }
+      }
+    }
+
+    this.pixels = newPixels;
+    this.lastDrawX = -1;
+    this.lastDrawY = -1;
+    this.render();
+  }
 }
 
 window.CanvasEngine = CanvasEngine;
