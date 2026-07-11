@@ -218,9 +218,56 @@
     switchToPencil();
   }
 
+  // ★★★ 镜像子菜单 ★★★
+  function initMirrorMenu() {
+    var mirrorSubmenu = document.getElementById('mirrorSubmenu');
+    var btnMirror = document.getElementById('btnMirror');
+
+    if (!btnMirror || !mirrorSubmenu) return;
+
+    btnMirror.addEventListener('click', function (e) {
+      e.stopPropagation();
+      // 关闭其他弹窗
+      var shapeSubmenu = document.getElementById('shapeSubmenu');
+      if (shapeSubmenu) shapeSubmenu.classList.remove('show');
+      mirrorSubmenu.classList.toggle('show');
+      if (window.SFX) window.SFX.click();
+    });
+
+    document.querySelectorAll('[data-mirror]').forEach(function (opt) {
+      opt.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var axis = opt.dataset.mirror;
+        mirrorSubmenu.classList.remove('show');
+
+        // 执行镜像翻转
+        if (S.layerSystem) {
+          S.layerSystem.flipFrame(axis);
+        } else {
+          S.engine.flip(axis);
+          S.anim.frames[S.anim.current] = S.engine.pixels.slice();
+        }
+
+        // 同步帧数据并保存
+        if (S.anim) S.anim.frames[S.anim.current] = S.engine.pixels.slice();
+        pushSnapshot();
+        autoSave();
+        if (window.SFX) window.SFX.click();
+      });
+    });
+
+    // 点击外部关闭弹窗
+    document.addEventListener('click', function (e) {
+      if (mirrorSubmenu && !mirrorSubmenu.contains(e.target) && e.target !== btnMirror) {
+        mirrorSubmenu.classList.remove('show');
+      }
+    });
+  }
+
   function init() {
     bindToolbar();
     initShapeMenu();
+    initMirrorMenu();
     bindZoom();
     bindCrop();
   }
@@ -229,6 +276,7 @@
     init: init,
     bindToolbar: bindToolbar,
     initShapeMenu: initShapeMenu,
+    initMirrorMenu: initMirrorMenu,
     bindZoom: bindZoom,
     setZoom: setZoom,
     bindCrop: bindCrop,
