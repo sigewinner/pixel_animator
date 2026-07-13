@@ -223,6 +223,90 @@
     initShapeMenu();
     bindZoom();
     bindCrop();
+    bindView();
+  }
+
+  // ---- 视图变换：旋转 / 平移 / 像素翻转旋转 ----
+  function bindView() {
+    var engine = S.engine;
+
+    // 旋转角度变化 -> 同步滑块与标签
+    engine.onRotationChange = function (deg) {
+      var slider = document.getElementById('rotSlider');
+      var label = document.getElementById('rotLabel');
+      if (slider) slider.value = deg;
+      if (label) label.textContent = deg + '°';
+    };
+
+    var rotSlider = document.getElementById('rotSlider');
+    if (rotSlider) {
+      rotSlider.addEventListener('input', function () {
+        var deg = parseInt(rotSlider.value, 10) || 0;
+        engine.setRotation(deg);
+      });
+    }
+
+    var btnRotLeft = document.getElementById('btnRotLeft');
+    if (btnRotLeft) btnRotLeft.addEventListener('click', function () {
+      engine.setRotation(engine.rotation - 90);
+    });
+    var btnRotRight = document.getElementById('btnRotRight');
+    if (btnRotRight) btnRotRight.addEventListener('click', function () {
+      engine.setRotation(engine.rotation + 90);
+    });
+    var btnViewReset = document.getElementById('btnViewReset');
+    if (btnViewReset) btnViewReset.addEventListener('click', function () {
+      engine.resetView();
+    });
+
+    // 像素级翻转 / 旋转（作用于所有帧）
+    function doTransform(kind) {
+      if (S.layerSystem) {
+        S.layerSystem.transformAllFrames(kind);
+      } else {
+        var w = engine.width, h = engine.height;
+        engine.pixels = CanvasEngine.transformFrame(engine.pixels, w, h, kind);
+        S.anim.frames[S.anim.current] = engine.pixels.slice();
+        if (kind === 'rotCW' || kind === 'rotCCW') {
+          var nw = h, nh = w;
+          engine.width = nw; engine.height = nh;
+          engine.canvas.width = nw * engine.pixelSize;
+          engine.canvas.height = nh * engine.pixelSize;
+          engine.resetView();
+        }
+        engine.render();
+        pushSnapshot();
+      }
+      S.canvasW = engine.width;
+      S.canvasH = engine.height;
+      PA.updateSizeDisplay();
+      PA.renderFrameList();
+      autoSave();
+    }
+
+    var btnFlipH = document.getElementById('btnFlipH');
+    if (btnFlipH) btnFlipH.addEventListener('click', function () { doTransform('flipH'); });
+    var btnFlipV = document.getElementById('btnFlipV');
+    if (btnFlipV) btnFlipV.addEventListener('click', function () { doTransform('flipV'); });
+
+    // 按住空格临时平移（松开恢复）
+    var spaceHeld = false;
+    window.addEventListener('keydown', function (e) {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      if (e.code === 'Space' || e.key === ' ') {
+        if (!spaceHeld) {
+          spaceHeld = true;
+          engine.setSpacePan(true);
+          e.preventDefault();
+        }
+      }
+    });
+    window.addEventListener('keyup', function (e) {
+      if (e.code === 'Space' || e.key === ' ') {
+        spaceHeld = false;
+        engine.setSpacePan(false);
+      }
+    });
   }
 
   PA.Toolbar = {
@@ -233,5 +317,6 @@
     setZoom: setZoom,
     bindCrop: bindCrop,
     exitCropMode: exitCropMode,
+    bindView: bindView,
   };
 })(window.PA);

@@ -8,7 +8,7 @@
   <meta http-equiv="Expires" content="0">
   <title>PixelForge · 像素动画编辑器</title>
   <!-- 基础样式（深色默认） -->
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
   <!-- ★★★ Win7 主题样式会在 theme.js 中按需动态加载 win7.css ★★★ -->
 </head>
 
@@ -261,6 +261,19 @@
             <button class="zoom-btn" id="btnZoomIn" title="放大">+</button>
             <button class="zoom-btn" id="btnZoomFit" title="适应窗口">适应</button>
           </div>
+          <div class="view-control">
+            <button class="tool-btn" data-tool="pan" id="btnPan" title="平移画布（也可按住空格拖拽）">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>
+            </button>
+            <button class="view-btn" id="btnRotLeft" title="左转 90°">⟲</button>
+            <button class="view-btn" id="btnRotRight" title="右转 90°">⟳</button>
+            <button class="view-btn" id="btnViewReset" title="重置视图（旋转/平移归零）">复位</button>
+            <input type="range" id="rotSlider" min="0" max="359" value="0" title="自由旋转视图">
+            <span class="rot-label" id="rotLabel">0°</span>
+            <span class="view-sep"></span>
+            <button class="view-btn" id="btnFlipH" title="水平翻转（像素级）">⇋</button>
+            <button class="view-btn" id="btnFlipV" title="垂直翻转（像素级）">⇅</button>
+          </div>
         </div>
         <div class="canvas-wrap">
           <canvas id="drawCanvas"></canvas>
@@ -305,6 +318,14 @@
             播放
           </button>
           <button class="action-btn" id="btnOnion">洋葱皮</button>
+        </div>
+        <div class="onion-control" id="onionControl" style="display:none">
+          <label>前帧</label>
+          <span class="onion-dot prev"></span>
+          <input type="range" id="onionAlphaSlider" min="5" max="100" value="30" title="洋葱皮透明度">
+          <span class="onion-dot next"></span>
+          <label>后帧</label>
+          <span id="onionAlphaLabel">30%</span>
         </div>
         <div class="fps-control">
           <label>速度</label>
@@ -586,14 +607,14 @@
 
   <script src="lib/gif.js/gif.js"></script>
   <script src="js/auth.js?v=8"></script>
-  <script src="js/canvas-engine.js?v=8"></script>
-  <script src="js/animation.js?v=8"></script>
+  <script src="js/canvas-engine.js?v=9"></script>
+  <script src="js/animation.js?v=9"></script>
   <script src="js/color-wheel.js?v=8"></script>
-  <script src="js/layer-system.js?v=8"></script>
+  <script src="js/layer-system.js?v=9"></script>
   <script src="js/app.js?v=8"></script>
   <!-- 模块化拆分：以下功能模块由 app.js 在初始化时调度 -->
   <script src="js/modules/palette.js?v=8"></script>
-  <script src="js/modules/toolbar.js?v=8"></script>
+  <script src="js/modules/toolbar.js?v=9"></script>
   <script src="js/modules/frames.js?v=8"></script>
   <script src="js/modules/playback.js?v=8"></script>
   <script src="js/modules/export.js?v=8"></script>

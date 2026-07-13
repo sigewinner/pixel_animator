@@ -878,6 +878,51 @@ body.editor {
 }
 .zoom-btn:hover { border-color: var(--primary); color: var(--primary); }
 #zoomLevel { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* ---- 视图变换：旋转 / 平移 / 翻转 ---- */
+.canvas-toolbar { flex-wrap: wrap; }
+.view-control {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.view-btn {
+  min-width: 28px;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  transition: all 0.15s;
+}
+.view-btn:hover { border-color: var(--primary); color: var(--primary); }
+.view-btn:active { transform: translateY(1px); }
+.rot-label { font-size: 12px; color: var(--text-muted); min-width: 34px; font-variant-numeric: tabular-nums; }
+.view-sep { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
+.view-control input[type=range] { width: 110px; }
+#btnPan.active { border-color: var(--primary); color: var(--primary); background: rgba(139,92,246,0.12); }
+
+/* ---- 洋葱皮透明度 ---- */
+.onion-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+.onion-control input[type=range] { width: 120px; }
+.onion-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.onion-dot.prev { background: #ff3b30; }
+.onion-dot.next { background: #0a84ff; }
+#onionAlphaLabel { min-width: 34px; font-variant-numeric: tabular-nums; }
 .canvas-wrap {
   background: var(--surface);
   padding: 16px;

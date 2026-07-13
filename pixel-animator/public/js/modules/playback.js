@@ -23,11 +23,29 @@
     });
 
     var onionBtn = document.getElementById('btnOnion');
+    var onionControl = document.getElementById('onionControl');
+    var onionAlphaSlider = document.getElementById('onionAlphaSlider');
+    var onionAlphaLabel = document.getElementById('onionAlphaLabel');
+
+    function refreshOnionControl() {
+      if (onionControl) onionControl.style.display = S.anim.onionSkin ? 'flex' : 'none';
+    }
+
     onionBtn.addEventListener('click', function (e) {
       var on = S.anim.toggleOnionSkin();
       this.classList.toggle('active', on);
+      refreshOnionControl();
     });
     onionBtn.classList.toggle('active', S.anim.onionSkin);
+
+    if (onionAlphaSlider) {
+      onionAlphaSlider.addEventListener('input', function () {
+        var a = parseInt(onionAlphaSlider.value, 10) / 100;
+        S.engine.setOnionAlpha(a);
+        if (onionAlphaLabel) onionAlphaLabel.textContent = onionAlphaSlider.value + '%';
+      });
+    }
+    refreshOnionControl();
   }
 
   function init() { bindPlayback(); }

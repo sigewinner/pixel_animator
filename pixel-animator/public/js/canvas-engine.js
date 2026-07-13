@@ -35,6 +35,18 @@ class CanvasEngine {
     this.lastDrawY = -1;
 
     this.onionFrame = null;
+    this.onionPrev = null;   // 洋葱皮：前一帧（红色 tint）
+    this.onionNext = null;   // 洋葱皮：后一帧（蓝色 tint）
+    this.onionAlpha = 0.3;   // 洋葱皮整体透明度
+
+    // 视图变换：旋转（仅视觉，不修改像素数据）
+    this.rotation = 0;
+    this.onRotationChange = null;
+    // 视图变换：平移（空格拖拽 / 平移工具）
+    this.panX = 0;
+    this.panY = 0;
+    this._panLast = null;
+    this._spaceHeld = false;
 
     // ★★★ 图形工具相关 ★★★
     this.shapeType = 'circle';
@@ -136,9 +148,63 @@ class CanvasEngine {
     this.render();
   }
 
-  setOnionFrame(frame) {
-    this.onionFrame = frame;
+  // 洋葱皮增强：前一帧(prev, 红色 tint) 与 后一帧(next, 蓝色 tint)，任一为 null 表示不显示
+  setOnion(prev, next) {
+    this.onionPrev = prev || null;
+    this.onionNext = next || null;
     this.render();
+  }
+
+  setOnionFrame(frame) {   // 兼容旧调用（仅前一帧）
+    this.onionPrev = frame || null;
+    this.onionNext = null;
+    this.render();
+  }
+
+  // 设置洋葱皮整体透明度（0.05 ~ 1）
+  setOnionAlpha(a) {
+    this.onionAlpha = Math.max(0.05, Math.min(1, a));
+    if (this.onionPrev || this.onionNext) this.render();
+  }
+
+  // 画布旋转（视图变换，不修改像素数据）。deg 为绝对角度
+  setRotation(deg) {
+    this.rotation = ((Math.round(deg) % 360) + 360) % 360;
+    this._applyTransform();
+    this._updateCursor();
+    if (this.onRotationChange) this.onRotationChange(this.rotation);
+  }
+
+  // 合并 平移 + 旋转 到 CSS transform
+  _applyTransform() {
+    const t = `translate(${this.panX}px, ${this.panY}px) rotate(${this.rotation}deg)`;
+    this.canvas.style.transformOrigin = 'center center';
+    this.canvas.style.transform = t;
+  }
+
+  setPan(x, y) {
+    this.panX = x;
+    this.panY = y;
+    this._applyTransform();
+  }
+
+  panBy(dx, dy) {
+    this.panX += dx;
+    this.panY += dy;
+    this._applyTransform();
+  }
+
+  resetView() {
+    this.rotation = 0;
+    this.panX = 0;
+    this.panY = 0;
+    this._applyTransform();
+    if (this.onRotationChange) this.onRotationChange(0);
+  }
+
+  setSpacePan(on) {
+    this._spaceHeld = !!on;
+    if (this.canvas) this.canvas.style.cursor = on ? 'grab' : '';
   }
 
   // ★★★ 设置图形类型 ★★★
@@ -261,11 +327,25 @@ class CanvasEngine {
   }
 
   _getPixelCoord(e) {
+    // 画布中心的屏幕坐标（CSS transform 绕中心旋转，中心位置不变；平移已含在 rect 中）
     const rect = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
-    const px = Math.floor((e.clientX - rect.left) * scaleX / this.pixelSize);
-    const py = Math.floor((e.clientY - rect.top) * scaleY / this.pixelSize);
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    // 鼠标相对中心的偏移
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    // 用 offsetWidth/offsetHeight（不受 transform 影响）还原 CSS 缩放
+    const scale = (this.canvas.offsetWidth || this.canvas.width) / this.width;
+    // 逆旋转：视图旋转 r 度，鼠标坐标需逆向还原 R(-r)
+    const r = this.rotation * Math.PI / 180;
+    const cos = Math.round(Math.cos(r) * 1e6) / 1e6;
+    const sin = Math.round(Math.sin(r) * 1e6) / 1e6;
+    const vx = dx * cos + dy * sin;
+    const vy = -dx * sin + dy * cos;
+    const ux = vx / scale;
+    const uy = vy / scale;
+    const px = Math.floor(ux + this.width / 2);
+    const py = Math.floor(uy + this.height / 2);
     return { x: Math.max(0, Math.min(this.width - 1, px)), y: Math.max(0, Math.min(this.height - 1, py)) };
   }
 
@@ -274,6 +354,15 @@ class CanvasEngine {
 
     const onDown = (e) => {
       e.preventDefault();
+
+      // 画布平移：按住空格 或 平移工具
+      if (this._spaceHeld || this.tool === 'pan') {
+        this._isPanning = true;
+        this._panLast = { x: e.clientX, y: e.clientY };
+        this.canvas.style.cursor = 'grabbing';
+        return;
+      }
+
       const { x, y } = this._getPixelCoord(e);
 
       // 锁定图层保护：绘制类工具在锁定图层上无效（吸管/裁剪仍可操作）
@@ -336,6 +425,12 @@ class CanvasEngine {
     };
 
     const onMove = (e) => {
+      // 画布平移中：实时跟随鼠标
+      if (this._isPanning && this._panLast) {
+        this.panBy(e.clientX - this._panLast.x, e.clientY - this._panLast.y);
+        this._panLast = { x: e.clientX, y: e.clientY };
+        return;
+      }
       if (!this.isDrawing) return;
       const { x, y } = this._getPixelCoord(e);
       
@@ -392,6 +487,15 @@ class CanvasEngine {
     };
 
     const onUp = () => {
+      // 结束画布平移
+      if (this._isPanning) {
+        this._isPanning = false;
+        this._panLast = null;
+        this.canvas.style.cursor = this._spaceHeld ? 'grab' : '';
+        if (this.onViewChange) this.onViewChange();
+        return;
+      }
+
       // 裁剪工具
       if (this.tool === 'crop' && this.isDrawing) {
         this.isDrawing = false;
@@ -850,7 +954,7 @@ class CanvasEngine {
   render(onionFrame = null) {
     const ctx = this.ctx;
     const ps = this.pixelSize;
-    const onion = (onionFrame !== null) ? onionFrame : this.onionFrame;
+    // 洋葱皮增强：前一帧（红色 tint）+ 后一帧（蓝色 tint），整体透明度洋葱皮 alpha
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -863,17 +967,23 @@ class CanvasEngine {
       }
     }
 
-    if (onion) {
-      ctx.globalAlpha = 0.25;
-      for (let y = 0; y < this.height; y++) {
-        for (let x = 0; x < this.width; x++) {
-          const c = onion[y * this.width + x];
-          if (c) {
-            ctx.fillStyle = c;
-            ctx.fillRect(x * ps, y * ps, ps, ps);
+    // 洋葱皮增强：前一帧红色 tint，后一帧蓝色 tint
+    if (this.onionPrev || this.onionNext) {
+      ctx.globalAlpha = this.onionAlpha;
+      const drawOnion = (frame, tint) => {
+        if (!frame) return;
+        for (let y = 0; y < this.height; y++) {
+          for (let x = 0; x < this.width; x++) {
+            const c = frame[y * this.width + x];
+            if (c) {
+              ctx.fillStyle = tint;
+              ctx.fillRect(x * ps, y * ps, ps, ps);
+            }
           }
         }
-      }
+      };
+      drawOnion(this.onionPrev, '#ff3b30');
+      drawOnion(this.onionNext, '#0a84ff');
       ctx.globalAlpha = 1;
     }
 
@@ -962,6 +1072,31 @@ class CanvasEngine {
     this.lastDrawX = -1;
     this.lastDrawY = -1;
     this.render();
+  }
+
+  // 像素级变换（静态纯函数）：对一帧像素数组做翻转/旋转。
+  // kind: 'flipH' 水平翻转 | 'flipV' 垂直翻转 | 'rotCW' 顺时针90° | 'rotCCW' 逆时针90°
+  // 旋转会交换宽高（新图 newW=h, newH=w）。返回新数组，源数组不变。
+  static transformFrame(src, w, h, kind) {
+    if (!src) return src;
+    const isRot = (kind === 'rotCW' || kind === 'rotCCW');
+    const newW = isRot ? h : w;
+    const newH = isRot ? w : h;
+    const out = new Array(newW * newH).fill(null);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const c = src[y * w + x];
+        if (c == null) continue;
+        let nx, ny;
+        if (kind === 'flipH')      { nx = w - 1 - x; ny = y; }
+        else if (kind === 'flipV') { nx = x; ny = h - 1 - y; }
+        else if (kind === 'rotCW')  { nx = h - 1 - y; ny = x; }
+        else if (kind === 'rotCCW') { nx = y; ny = w - 1 - x; }
+        else { nx = x; ny = y; }
+        out[ny * newW + nx] = c;
+      }
+    }
+    return out;
   }
 }
 

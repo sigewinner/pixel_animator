@@ -730,6 +730,41 @@
       this._initFromAnim();
     }
 
+    // ---- 像素级变换：翻转 / 旋转（作用所有帧的所有图层 + 合成帧） ----
+    // kind: 'flipH' | 'flipV' | 'rotCW' | 'rotCCW'
+    transformAllFrames(kind) {
+      if (typeof CanvasEngine === 'undefined' || !CanvasEngine.transformFrame) return;
+      const w = this.engine.width, h = this.engine.height;
+      const isRot = (kind === 'rotCW' || kind === 'rotCCW');
+      const newW = isRot ? h : w;
+      const newH = isRot ? w : h;
+
+      // 所有帧的所有图层缓冲
+      for (let f = 0; f < this.framePixelData.length; f++) {
+        for (let i = 0; i < this.framePixelData[f].length; i++) {
+          this.framePixelData[f][i] = CanvasEngine.transformFrame(this.framePixelData[f][i], w, h, kind);
+        }
+      }
+      // 合成帧（导出 / 洋葱皮 / 播放读取）
+      if (this.anim && this.anim.frames) {
+        for (let f = 0; f < this.anim.frames.length; f++) {
+          this.anim.frames[f] = CanvasEngine.transformFrame(this.anim.frames[f], w, h, kind);
+        }
+      }
+      // 旋转交换画布宽高
+      if (isRot) {
+        this.engine.width = newW;
+        this.engine.height = newH;
+        this.engine.canvas.width = newW * this.engine.pixelSize;
+        this.engine.canvas.height = newH * this.engine.pixelSize;
+      }
+      this._wireLiveRefs();
+      this._syncToEngine();
+      this._renderLayerList();
+      this._updateOpacityUI();
+      if (this.onChange) this.onChange();
+    }
+
     // ---- 获取所有图层数据（用于保存） ----
     getLayerData() {
       return this.layers.map(layer => ({
