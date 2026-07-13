@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>像素动画编辑器 · 登录</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=2">
 </head>
 <body class="auth-page">
+  <div class="auth-bg" id="authBg"></div>
 
   <div class="auth-card">
     <div class="auth-logo">
@@ -53,6 +54,12 @@
     <p class="auth-footer">
       <a href="#" onclick="guestLogin();return false">游客模式体验 →</a>
     </p>
+  </div>
+
+  <div class="bg-changer">
+    <button type="button" id="btnChangeBg">更换背景</button>
+    <button type="button" id="btnResetBg">恢复默认</button>
+    <input type="file" id="bgFileInput" accept="image/*" hidden>
   </div>
 
   <script>
@@ -149,6 +156,48 @@
       localStorage.setItem('pa_user', JSON.stringify(user));
       window.location.href = 'index.html';
     }
+
+    // ---- 登录页背景更换 ----
+    (function bgChanger() {
+      const BG_KEY = 'pa_login_bg';
+      const bg = document.getElementById('authBg');
+      const defaultGrad = 'radial-gradient(ellipse at 20% 20%, rgba(139,92,246,0.12) 0%, transparent 50%),'
+                        + 'radial-gradient(ellipse at 80% 80%, rgba(56,189,248,0.10) 0%, transparent 50%)';
+      function applyLoginBg(url) {
+        if (url) {
+          bg.style.backgroundImage = 'linear-gradient(rgba(13,14,26,0.55), rgba(13,14,26,0.55)), url("' + url + '")';
+          bg.style.backgroundSize = 'cover';
+          bg.style.backgroundPosition = 'center';
+          bg.style.backgroundRepeat = 'no-repeat';
+          bg.style.backgroundAttachment = 'fixed';
+        } else {
+          bg.style.backgroundImage = defaultGrad;
+          bg.style.backgroundSize = '';
+          bg.style.backgroundPosition = '';
+          bg.style.backgroundRepeat = '';
+          bg.style.backgroundAttachment = '';
+        }
+      }
+      applyLoginBg(localStorage.getItem(BG_KEY));
+      document.getElementById('btnChangeBg').addEventListener('click', function () {
+        document.getElementById('bgFileInput').click();
+      });
+      document.getElementById('bgFileInput').addEventListener('change', function (e) {
+        const f = e.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = function (ev) {
+          localStorage.setItem(BG_KEY, ev.target.result);
+          applyLoginBg(ev.target.result);
+        };
+        reader.readAsDataURL(f);
+        e.target.value = '';
+      });
+      document.getElementById('btnResetBg').addEventListener('click', function () {
+        localStorage.removeItem(BG_KEY);
+        applyLoginBg(null);
+      });
+    })();
   </script>
 </body>
 </html>

@@ -58,10 +58,11 @@
     linear-gradient(90deg, rgba(139,92,246,0.04) 1px, transparent 1px);
   background-size: 32px 32px;
   pointer-events: none;
+  z-index: 1;
 }
 .auth-card {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: 100%;
   max-width: 420px;
   background: var(--surface);
@@ -70,6 +71,40 @@
   box-shadow: var(--shadow);
   padding: 40px 36px;
   animation: authCardIn 0.4s ease;
+}
+
+/* 登录页背景图层 + 更换背景按钮 */
+.auth-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.bg-changer {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+}
+.bg-changer button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: border-color .12s, color .12s;
+}
+.bg-changer button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 @keyframes authCardIn {
   from { opacity: 0; transform: translateY(20px) scale(0.98); }
